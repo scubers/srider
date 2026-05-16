@@ -78,6 +78,14 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await closeLiveTab(msg);
       case 'addUrlToGroup':
         return await addUrlToGroup(msg);
+      default: {
+        // Exhaustiveness check: adding a new Message variant must add a case here.
+        const exhaustive: never = msg;
+        return {
+          ok: false,
+          error: `unknown message type: ${(exhaustive as { type?: string }).type ?? 'unknown'}`,
+        };
+      }
     }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

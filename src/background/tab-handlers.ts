@@ -316,7 +316,7 @@ export async function handleTabAttached(
 
       const target = findWindowStateByChromeId(data, attachInfo.newWindowId);
       if (target) {
-        moving.chromeTabId = chromeTabId;
+        // moving.chromeTabId is already chromeTabId; we just relocate the TabRef.
         target.untrackedTabs.push(moving);
         updateFingerprint(target);
       }
@@ -332,6 +332,9 @@ export async function handleTabAttached(
           if (t.chromeTabId === chromeTabId) t.chromeTabId = null;
         }
       }
+      const before = state.untrackedTabs.length;
+      state.untrackedTabs = state.untrackedTabs.filter((t) => t.chromeTabId !== chromeTabId);
+      if (state.untrackedTabs.length !== before) updateFingerprint(state);
     }
   });
 }

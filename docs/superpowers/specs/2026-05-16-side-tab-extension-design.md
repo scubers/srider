@@ -315,9 +315,12 @@ SW 启动 (chrome.runtime.onStartup)
 ```
 chrome.windows.onRemoved 触发
   └─> SW: 找到对应 WindowState
-        ├─> 保留数据（不立即删）
+        ├─> 保留 groups、activeGroupId、fingerprint
         ├─> chromeWindowId 设为 null
-        └─> fingerprint 已经是最新（标签事件时不停更新）
+        ├─> 所有 group 内 TabRef.chromeTabId 置 null（变 saved）
+        └─> untrackedTabs 清空（live-only 设计，无可恢复语义；
+            其 URLs 已经在上次更新的 fingerprint 里，6.6 重新匹配时
+            会从 snapshot 重建）
 
 → 下次同 fingerprint 的窗口出现时（6.6），会重新关联
 ```
