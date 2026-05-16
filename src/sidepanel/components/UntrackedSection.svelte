@@ -48,7 +48,7 @@
   }
 
   .title {
-    padding: 4px 12px;
+    padding: 4px 8px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;

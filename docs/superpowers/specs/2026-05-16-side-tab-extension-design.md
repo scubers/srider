@@ -20,6 +20,7 @@
 - 每个浏览器窗口拥有独立的分组集
 - 用户设置项（主题、favicon 显示、saved 点击行为、默认展开状态）
 - "未归类"区段收纳无法归入任何分组的 live 标签（无活动组时、删除分组后保留下来的等）
+- 键盘快捷键 `Cmd/Ctrl+B`（可在 `chrome://extensions/shortcuts` 自定义）切换侧边栏显示/隐藏
 
 **非目标（v1 不做）**：
 
@@ -368,6 +369,32 @@ Side Panel 启动时：
 
 `chrome.windows.getCurrent()` 在侧边栏里返回包含侧边栏的窗口。
 
+### 6.11 键盘快捷键切换侧边栏
+
+Chrome 的 `chrome.sidePanel` API 没有提供"关闭"方法。利用 Chrome `commands` API + 一个长连 port 实现 toggle：
+
+```
+manifest commands:
+  toggle-side-panel: 默认 Ctrl+B / Cmd+B（用户可在 chrome://extensions/shortcuts 改）
+
+侧边栏挂载时：
+  chrome.runtime.connect({ name: 'sidepanel' })
+  → 向 SW 发 { type: 'hello', chromeWindowId }
+  → 监听 port.onMessage：收到 { type: 'close' } 时调 window.close()
+
+SW：
+  chrome.runtime.onConnect 收到 'sidepanel' 命名的 port
+    └─> 缓存 Map<chromeWindowId, Port>
+        port.onDisconnect 触发时清理（用户关闭侧边栏会触发）
+
+  chrome.commands.onCommand('toggle-side-panel'):
+    └─> 取当前窗口的 chromeWindowId
+        ├─> Map 有 port → postMessage({ type: 'close' })
+        └─> Map 没有 port → chrome.sidePanel.open({ windowId })
+```
+
+`chrome.commands` 事件算作用户手势，满足 `chrome.sidePanel.open` 对手势的要求。
+
 ## 7. 存储与 Service Worker 生命周期
 
 ### 7.1 存储分布
@@ -499,6 +526,12 @@ chrome-side-tab/
   },
   "action": {
     "default_title": "打开 Side Tab"
+  },
+  "commands": {
+    "toggle-side-panel": {
+      "suggested_key": { "default": "Ctrl+B", "mac": "Command+B" },
+      "description": "切换 Side Tab 侧边栏"
+    }
   },
   "icons": {
     "16": "assets/icons/16.png",

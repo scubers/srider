@@ -143,11 +143,12 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 8px 4px 28px;
+    gap: 6px;
+    padding: 3px 6px 3px 22px;
     border-radius: 4px;
     cursor: pointer;
     color: var(--fg);
+    min-width: 0;
   }
 
   .tab:hover {

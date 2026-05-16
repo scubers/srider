@@ -22,4 +22,13 @@ export default defineManifest({
   action: {
     default_title: 'Open Side Tab',
   },
+  commands: {
+    'toggle-side-panel': {
+      suggested_key: {
+        default: 'Ctrl+B',
+        mac: 'Command+B',
+      },
+      description: '切换 Side Tab 侧边栏 (Toggle Side Tab)',
+    },
+  },
 });

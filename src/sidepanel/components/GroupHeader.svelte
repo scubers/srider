@@ -88,9 +88,10 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 6px 8px;
+    padding: 5px 6px;
     background: var(--bg-elevated);
     border-bottom: 1px solid transparent;
+    min-width: 0;
   }
 
   .header.active {
@@ -113,13 +114,13 @@
 
   .name {
     flex: 1;
+    min-width: 0;
     text-align: left;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     padding: 2px 4px;
     border-radius: 4px;
-    min-width: 0;
   }
 
   .name:hover {

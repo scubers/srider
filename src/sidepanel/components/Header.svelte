@@ -28,7 +28,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-elevated);
     position: sticky;
