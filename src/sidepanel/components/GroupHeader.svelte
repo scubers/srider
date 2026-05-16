@@ -28,33 +28,11 @@
   let menuOpen = $state(false);
   let menuEl: HTMLDivElement | undefined = $state();
 
-  /**
-   * Single-vs-double-click disambiguator. A bare onclick + ondblclick on the
-   * same element fires onclick first (toggling the group) and then dblclick
-   * (renaming). The 220ms delay lets dblclick cancel the pending toggle.
-   */
-  let pendingToggleTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function cancelPendingToggle() {
-    if (pendingToggleTimer !== null) {
-      clearTimeout(pendingToggleTimer);
-      pendingToggleTimer = null;
-    }
-  }
-
-  function scheduleToggle() {
-    cancelPendingToggle();
-    pendingToggleTimer = setTimeout(() => {
-      pendingToggleTimer = null;
-      void onToggle();
-    }, 220);
-  }
-
   function onRowClick(e: MouseEvent) {
     if (renaming) return;
     // Ignore clicks routed to the menu or its items.
     if ((e.target as HTMLElement | null)?.closest('.menu-wrap')) return;
-    scheduleToggle();
+    void onToggle();
   }
 
   function onRowKeydown(e: KeyboardEvent) {
@@ -63,15 +41,8 @@
     if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      cancelPendingToggle();
       void onToggle();
     }
-  }
-
-  function onNameDblClick(e: MouseEvent) {
-    e.preventDefault();
-    cancelPendingToggle();
-    renaming = true;
   }
 
   $effect(() => {
@@ -110,7 +81,7 @@
   {#if renaming}
     <RenameInput initial={group.name} onCommit={commitRename} onCancel={() => (renaming = false)} />
   {:else}
-    <span class="name" class:auto={isAuto} title={isAuto && group.autoDomain ? `自动分组（域名：${group.autoDomain}） — 双击重命名` : '双击重命名'}>
+    <span class="name" class:auto={isAuto} title={isAuto && group.autoDomain ? `自动分组（域名：${group.autoDomain}）` : group.name}>
       {#if isAuto}
         <span class="auto-icon" aria-hidden="true">
           {#if groupIcon}
@@ -120,7 +91,7 @@
           {/if}
         </span>
       {/if}
-      <span class="name-text" ondblclick={onNameDblClick}>{group.name}</span>
+      <span class="name-text">{group.name}</span>
       <span class="count">({liveCount}/{group.tabs.length})</span>
     </span>
   {/if}
