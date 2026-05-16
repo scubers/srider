@@ -15,7 +15,6 @@
   } = $props();
 
   const isAuto = $derived(group.kind === 'auto-domain');
-  /** Borrow a favicon from the first member tab that has a safe one. */
   const groupIcon = $derived.by(() => {
     if (!isAuto) return null;
     for (const t of group.tabs) {
@@ -23,10 +22,57 @@
     }
     return null;
   });
+  const liveCount = $derived(group.tabs.filter((t) => t.chromeTabId !== null).length);
 
   let renaming = $state(false);
   let menuOpen = $state(false);
   let menuEl: HTMLDivElement | undefined = $state();
+
+  /**
+   * Single-vs-double-click disambiguator. A bare onclick + ondblclick on the
+   * same element fires onclick first (toggling the group) and then dblclick
+   * (renaming). The 220ms delay lets dblclick cancel the pending toggle.
+   */
+  let pendingToggleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function cancelPendingToggle() {
+    if (pendingToggleTimer !== null) {
+      clearTimeout(pendingToggleTimer);
+      pendingToggleTimer = null;
+    }
+  }
+
+  function scheduleToggle() {
+    cancelPendingToggle();
+    pendingToggleTimer = setTimeout(() => {
+      pendingToggleTimer = null;
+      void onToggle();
+    }, 220);
+  }
+
+  function onRowClick(e: MouseEvent) {
+    if (renaming) return;
+    // Ignore clicks routed to the menu or its items.
+    if ((e.target as HTMLElement | null)?.closest('.menu-wrap')) return;
+    scheduleToggle();
+  }
+
+  function onRowKeydown(e: KeyboardEvent) {
+    if (renaming) return;
+    // Only handle keys on the row itself; child controls handle their own.
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      cancelPendingToggle();
+      void onToggle();
+    }
+  }
+
+  function onNameDblClick(e: MouseEvent) {
+    e.preventDefault();
+    cancelPendingToggle();
+    renaming = true;
+  }
 
   $effect(() => {
     if (!menuOpen) return;
@@ -37,8 +83,6 @@
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
   });
-
-  const liveCount = $derived(group.tabs.filter((t) => t.chromeTabId !== null).length);
 
   async function commitRename(name: string) {
     renaming = false;
@@ -53,40 +97,35 @@
   }
 </script>
 
-<div class="header">
-  <button
-    class="caret"
-    onclick={() => onToggle()}
-    aria-label={group.collapsed ? '展开分组' : '折叠分组'}
-  >
-    {group.collapsed ? '▶' : '▼'}
-  </button>
+<div
+  class="header"
+  role="button"
+  tabindex="0"
+  aria-expanded={!group.collapsed}
+  onclick={onRowClick}
+  onkeydown={onRowKeydown}
+>
+  <span class="caret" aria-hidden="true">{group.collapsed ? '▶' : '▼'}</span>
 
   {#if renaming}
     <RenameInput initial={group.name} onCommit={commitRename} onCancel={() => (renaming = false)} />
   {:else}
-    <button
-      class="name"
-      class:auto={isAuto}
-      ondblclick={() => (renaming = true)}
-      title={isAuto && group.autoDomain
-        ? `自动分组（域名：${group.autoDomain}） — 双击重命名`
-        : '双击重命名'}
-    >
+    <span class="name" class:auto={isAuto} title={isAuto && group.autoDomain ? `自动分组（域名：${group.autoDomain}） — 双击重命名` : '双击重命名'}>
       {#if isAuto}
-        <span class="auto-icon">
+        <span class="auto-icon" aria-hidden="true">
           {#if groupIcon}
             <img src={groupIcon} alt="" width="14" height="14" />
           {:else}
-            <span class="auto-fallback" aria-hidden="true">⌘</span>
+            <span class="auto-fallback">⌘</span>
           {/if}
         </span>
       {/if}
-      <span class="name-text">{group.name}</span>
+      <span class="name-text" ondblclick={onNameDblClick}>{group.name}</span>
       <span class="count">({liveCount}/{group.tabs.length})</span>
-    </button>
+    </span>
   {/if}
 
+  <!-- Menu lives in its own container; row-click ignores anything inside it. -->
   <div class="menu-wrap" bind:this={menuEl}>
     <button class="menu-btn" onclick={() => (menuOpen = !menuOpen)} aria-label="更多操作">⋯</button>
     {#if menuOpen}
@@ -106,6 +145,17 @@
     padding: 4px 4px;
     background: var(--bg-elevated);
     min-width: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .header:hover {
+    background: var(--bg-hover);
+  }
+
+  .header:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .caret {
@@ -119,23 +169,13 @@
     justify-content: center;
   }
 
-  .caret:hover {
-    color: var(--fg);
-  }
-
   .name {
     flex: 1;
     min-width: 0;
-    text-align: left;
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 2px 4px;
-    border-radius: 4px;
-  }
-
-  .name:hover {
-    background: var(--bg-hover);
   }
 
   .auto-icon {
@@ -190,7 +230,7 @@
   }
 
   .menu-btn:hover {
-    background: var(--bg-hover);
+    background: var(--bg-active);
     color: var(--fg);
   }
 
