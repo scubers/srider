@@ -33,9 +33,12 @@ describe('isSafeFaviconUrl', () => {
     expect(isSafeFaviconUrl('http://example.com/favicon.ico')).toBe(true);
   });
 
-  it('allows chrome:// and chrome-extension://', () => {
-    expect(isSafeFaviconUrl('chrome://favicon/https://example.com')).toBe(true);
-    expect(isSafeFaviconUrl('chrome-extension://abc/icon.png')).toBe(true);
+  it('rejects chrome:// (favicon endpoint removed in MV3)', () => {
+    expect(isSafeFaviconUrl('chrome://favicon/https://example.com')).toBe(false);
+  });
+
+  it('rejects chrome-extension:// (cross-extension loads are blocked by Chrome)', () => {
+    expect(isSafeFaviconUrl('chrome-extension://abc/icon.png')).toBe(false);
   });
 
   it('rejects data: scheme', () => {

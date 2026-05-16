@@ -27,7 +27,16 @@ export function isSafeNavigationUrl(url: string): boolean {
   return SAFE_SCHEMES.has(parsed.protocol);
 }
 
-const SAFE_FAVICON_SCHEMES = new Set(['http:', 'https:', 'chrome:', 'chrome-extension:']);
+/**
+ * Schemes we'll trust as <img src> for a favicon. Limited to http(s) on
+ * purpose: chrome:// favicons depend on Chrome version (the public
+ * `chrome://favicon/…` endpoint was removed in MV3), and
+ * `chrome-extension://OTHER_ID/…` favicons are blocked by Chrome unless the
+ * owning extension declares them in `web_accessible_resources`. Both produce
+ * console warnings on every render. The colored-letter fallback covers those
+ * tabs cleanly.
+ */
+const SAFE_FAVICON_SCHEMES = new Set(['http:', 'https:']);
 
 /** True if `url` is a safe scheme for use as <img src>. */
 export function isSafeFaviconUrl(url: string): boolean {
