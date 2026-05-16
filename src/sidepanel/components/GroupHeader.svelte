@@ -27,11 +27,46 @@
   let renaming = $state(false);
   let menuOpen = $state(false);
   let menuEl: HTMLDivElement | undefined = $state();
+  let menuBtnEl: HTMLButtonElement | undefined = $state();
+  let menuPopupEl: HTMLDivElement | undefined = $state();
+  /** Viewport-relative coords for the position:fixed menu. */
+  let menuPos = $state<{ left: number; top: number } | null>(null);
+
+  const APPROX_MENU_WIDTH = 144;
+  const APPROX_MENU_HEIGHT = 76;
+
+  function computeMenuPos(): void {
+    if (!menuBtnEl) return;
+    const rect = menuBtnEl.getBoundingClientRect();
+    // Right-align with the menu button.
+    let left = rect.right - APPROX_MENU_WIDTH;
+    // Keep within viewport horizontally.
+    if (left < 4) left = 4;
+    if (left + APPROX_MENU_WIDTH > window.innerWidth - 4) {
+      left = window.innerWidth - APPROX_MENU_WIDTH - 4;
+    }
+    // Open below unless that would clip the viewport bottom.
+    let top = rect.bottom + 4;
+    if (top + APPROX_MENU_HEIGHT > window.innerHeight - 4) {
+      top = rect.top - APPROX_MENU_HEIGHT - 4;
+    }
+    if (top < 4) top = 4;
+    menuPos = { left, top };
+  }
+
+  function toggleMenu() {
+    if (menuOpen) {
+      menuOpen = false;
+      return;
+    }
+    computeMenuPos();
+    menuOpen = true;
+  }
 
   function onRowClick(e: MouseEvent) {
     if (renaming) return;
     // Ignore clicks routed to the menu or its items.
-    if ((e.target as HTMLElement | null)?.closest('.menu-wrap')) return;
+    if ((e.target as HTMLElement | null)?.closest('.menu-wrap, .menu')) return;
     void onToggle();
   }
 
@@ -48,11 +83,23 @@
   $effect(() => {
     if (!menuOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (!menuEl) return;
-      if (!menuEl.contains(e.target as Node)) menuOpen = false;
+      const t = e.target as Node;
+      if (menuEl?.contains(t)) return;       // click inside the wrap (button)
+      if (menuPopupEl?.contains(t)) return;  // click inside the fixed-position popup
+      menuOpen = false;
     };
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    // Close on scroll / resize to avoid stale coords.
+    const onReposition = () => {
+      menuOpen = false;
+    };
+    window.addEventListener('scroll', onReposition, true);
+    window.addEventListener('resize', onReposition);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      window.removeEventListener('scroll', onReposition, true);
+      window.removeEventListener('resize', onReposition);
+    };
   });
 
   async function commitRename(name: string) {
@@ -98,15 +145,24 @@
 
   <!-- Menu lives in its own container; row-click ignores anything inside it. -->
   <div class="menu-wrap" bind:this={menuEl}>
-    <button class="menu-btn" onclick={() => (menuOpen = !menuOpen)} aria-label="更多操作">⋯</button>
-    {#if menuOpen}
-      <div class="menu" role="menu">
-        <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>重命名</button>
-        <button role="menuitem" class="danger" onclick={deleteGroup}>删除分组</button>
-      </div>
-    {/if}
+    <button bind:this={menuBtnEl} class="menu-btn" onclick={toggleMenu} aria-label="更多操作">⋯</button>
   </div>
 </div>
+
+{#if menuOpen && menuPos}
+  <!-- Rendered outside the scroll container via position:fixed so it can't be
+       clipped by .content's overflow. -->
+  <div
+    bind:this={menuPopupEl}
+    class="menu"
+    role="menu"
+    style:left="{menuPos.left}px"
+    style:top="{menuPos.top}px"
+  >
+    <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>重命名</button>
+    <button role="menuitem" class="danger" onclick={deleteGroup}>删除分组</button>
+  </div>
+{/if}
 
 <style>
   .header {
@@ -206,16 +262,17 @@
   }
 
   .menu {
-    position: absolute;
-    right: 0;
-    top: 24px;
+    /* Inline left/top set by computeMenuPos so it can't be clipped by
+       .content's overflow. */
+    position: fixed;
     min-width: 140px;
+    max-width: 200px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: var(--shadow);
     padding: 4px;
-    z-index: 20;
+    z-index: 1000;
     display: flex;
     flex-direction: column;
   }

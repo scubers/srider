@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appDataStore, settingsStore } from '$shared/stores.svelte';
   import { applyTheme, watchSystemTheme } from '$shared/theme';
+  import { sendMessage } from '$shared/messages';
   import Header from './components/Header.svelte';
   import GroupList from './components/GroupList.svelte';
   import UntrackedSection from './components/UntrackedSection.svelte';
@@ -56,6 +57,59 @@
   // Re-apply theme whenever it changes in settings.
   $effect(() => {
     if (settingsStore.loaded) applyTheme(settingsStore.value.theme);
+  });
+
+  /**
+   * Follow the active Chrome tab in the panel:
+   *   - if it lives in a collapsed group, expand that group;
+   *   - then scroll the corresponding TabItem into view.
+   *
+   * Reading `g.collapsed` inside this effect makes Svelte re-run it after the
+   * expansion lands in storage, so the scroll happens against the expanded
+   * DOM rather than the still-collapsed one.
+   */
+  $effect(() => {
+    const activeChromeTabId = activeTabStore.chromeTabId;
+    if (activeChromeTabId === null) return;
+    const w = windowState;
+    if (!w) return;
+
+    let foundTabRefId: string | null = null;
+    let collapsedGroupId: string | null = null;
+
+    for (const g of w.groups) {
+      const tab = g.tabs.find((t) => t.chromeTabId === activeChromeTabId);
+      if (!tab) continue;
+      foundTabRefId = tab.id;
+      if (g.collapsed) collapsedGroupId = g.id;
+      break;
+    }
+    if (foundTabRefId === null) {
+      const u = w.untrackedTabs.find((t) => t.chromeTabId === activeChromeTabId);
+      if (u) foundTabRefId = u.id;
+    }
+    if (foundTabRefId === null) return;
+
+    if (collapsedGroupId !== null) {
+      // Trigger expansion; this effect will re-run once the storage update
+      // lands (g.collapsed → false) and then take the scroll branch.
+      void sendMessage({
+        type: 'toggleGroupCollapsed',
+        windowId: w.id,
+        groupId: collapsedGroupId,
+        collapsed: false,
+      });
+      return;
+    }
+
+    // Defer scroll to the next frame so the DOM has the latest layout.
+    const tabRefId = foundTabRefId;
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-tab-id="${CSS.escape(tabRefId)}"]`,
+      );
+      el?.scrollIntoView({ block: 'nearest' });
+    });
   });
 </script>
 

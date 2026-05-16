@@ -133,6 +133,7 @@
   class:edge-bottom={hoverEdge === 'bottom'}
   role="button"
   tabindex="0"
+  data-tab-id={tab.id}
   aria-current={isActive ? 'true' : undefined}
   onclick={onActivate}
   onkeydown={onKeydown}
