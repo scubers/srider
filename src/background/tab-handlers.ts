@@ -183,8 +183,13 @@ export async function handleTabCreated(
     return;
   }
 
-  const url = tab.url ?? tab.pendingUrl ?? '';
-  const title = tab.title ?? url;
+  // Prefer pendingUrl: when a tab is created via chrome.tabs.create({url:X}),
+  // onCreated typically fires with pendingUrl=X and url='' (or
+  // 'chrome://newtab/'). Using ?? would lock us to the empty string and break
+  // pendingOpens lookup (which is why clicking a saved tab used to spawn a
+  // new entry instead of relinking the existing one).
+  const url = tab.pendingUrl || tab.url || '';
+  const title = tab.title || url;
 
   // Peek pendingOpens (do not consume yet — we only consume on commit so a
   // failed lookup leaves the entry intact for the next attempt).
@@ -432,8 +437,8 @@ async function snapshotAllWindows(): Promise<ChromeWindowSnapshot[]> {
         .filter((t): t is chrome.tabs.Tab & { id: number } => t.id !== undefined)
         .map((t) => ({
           chromeTabId: t.id,
-          url: t.url ?? t.pendingUrl ?? '',
-          title: t.title ?? '',
+          url: t.pendingUrl || t.url || '',
+          title: t.title || '',
           favIconUrl: t.favIconUrl,
         })),
     }));
