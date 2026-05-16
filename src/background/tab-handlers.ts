@@ -16,6 +16,7 @@ import {
 import type { TabRef, WindowState } from '$shared/types';
 import { uuid } from '$shared/id';
 import { withAppData } from './write-queue';
+import { cleanupEmptyAutoGroups } from './group-cleanup';
 import {
   matchWindows,
   cleanupOrphans,
@@ -299,7 +300,10 @@ export async function handleTabRemoved(
       const beforeUntracked = state.untrackedTabs.length;
       state.untrackedTabs = state.untrackedTabs.filter((t) => t.chromeTabId !== chromeTabId);
       if (state.untrackedTabs.length !== beforeUntracked) changed = true;
-      if (changed) updateFingerprint(state);
+      if (changed) {
+        cleanupEmptyAutoGroups(state);
+        updateFingerprint(state);
+      }
     }
   });
 }
@@ -343,6 +347,7 @@ export async function handleTabAttached(
       } else {
         loc.state.untrackedTabs = loc.state.untrackedTabs.filter((t) => t.id !== moving.id);
       }
+      cleanupEmptyAutoGroups(loc.state);
       updateFingerprint(loc.state);
 
       const target = findWindowStateByChromeId(data, attachInfo.newWindowId);

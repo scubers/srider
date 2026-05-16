@@ -431,6 +431,8 @@ UI（未归类区段的"按域名分组"按钮）发 { type: 'autoGroupByDomain'
 
 **hostname 而非 eTLD+1**：`mail.google.com` 和 `drive.google.com` 会成为两个不同的分组。要做 eTLD+1 需要打包 public suffix list，v1 不做。用户随时可以手动把多个 auto-domain 分组的标签合并到一个手动分组里。
 
+**Auto-domain 分组的自动清理**：当 auto-domain 分组的 `tabs.length === 0`（最后一项被关闭或移走）时，分组自身也删除。手动分组即使 `tabs` 空也保留（用户主动创建，是空容器还是被清空都视作"留着"）。清理点：`handleTabRemoved`、`handleTabAttached`、`removeTab` 消息、`moveTab` 消息。pin 过的 saved item 仍然算"占位"，不会触发清理。
+
 ## 7. 存储与 Service Worker 生命周期
 
 ### 7.1 存储分布

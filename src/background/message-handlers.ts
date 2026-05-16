@@ -18,6 +18,7 @@ import type {
 } from '$shared/types';
 import type { Message, MessageResponse } from '$shared/messages';
 import { withAppData } from './write-queue';
+import { cleanupEmptyAutoGroups } from './group-cleanup';
 import { registerPendingOpen } from './tab-handlers';
 
 function getWindow(data: AppData, windowId: WindowUUID): WindowState | null {
@@ -203,6 +204,7 @@ async function moveTab(msg: Extract<Message, { type: 'moveTab' }>): Promise<Mess
     const [tab] = from.splice(idx, 1);
     const insertAt = Math.max(0, Math.min(msg.toIndex, to.length));
     to.splice(insertAt, 0, tab);
+    cleanupEmptyAutoGroups(window);
   });
   return { ok: true };
 }
@@ -216,6 +218,7 @@ async function removeTab(msg: Extract<Message, { type: 'removeTab' }>): Promise<
     const idx = container.findIndex((t) => t.id === msg.tabRefId);
     if (idx === -1) throw new Error(`tab ${msg.tabRefId} not found`);
     container.splice(idx, 1);
+    cleanupEmptyAutoGroups(window);
   });
   return { ok: true };
 }
