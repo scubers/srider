@@ -37,14 +37,18 @@
   }
 </script>
 
-<section bind:this={rootEl} class="untracked" class:over={isOver}>
-  <div class="title-row">
-    <div class="title">未归类 ({win.untrackedTabs.length})</div>
+<section bind:this={rootEl} class="card" class:over={isOver}>
+  <div class="header">
+    <span class="icon" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2 4h4l1.5 1.5h6.5v7.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z"/></svg>
+    </span>
+    <span class="title">未分类</span>
+    <span class="count tnum">{win.untrackedTabs.length}</span>
     <button
       class="action"
       onclick={autoGroupByDomain}
       disabled={busy || win.untrackedTabs.length === 0}
-      title="把未归类的标签按域名自动整理成分组"
+      title="按域名自动整理成分组"
     >
       按域名分组
     </button>
@@ -52,61 +56,86 @@
   <ul role="list">
     {#each win.untrackedTabs as tab (tab.id)}
       <li>
-        <TabItem {tab} groupId={null} window={win} />
+        <TabItem {tab} groupId={null} window={win} iconVariant="favicon" />
       </li>
     {/each}
   </ul>
 </section>
 
 <style>
-  .untracked {
-    margin-top: 12px;
-    padding-top: 6px;
-    border-top: 1px dashed var(--border);
+  .card {
+    position: relative;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    overflow: hidden;
   }
 
-  .untracked.over {
-    background: var(--accent-bg);
+  .card.over {
+    border-color: var(--accent);
+    background: var(--accent-bg-soft);
   }
 
-  .title-row {
+  .header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
-    padding: 4px 6px;
+    height: 34px;
+    padding: 0 6px 0 12px;
+    color: var(--text-mute);
+  }
+
+  .icon {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-mute);
   }
 
   .title {
-    font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--fg-muted);
-    font-weight: 600;
+    flex: 1;
     min-width: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.005em;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .count {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-mute);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 1px 7px;
+    min-width: 18px;
+    text-align: center;
   }
 
   .action {
     flex-shrink: 0;
     font-size: 11px;
     color: var(--accent);
-    padding: 2px 6px;
+    padding: 2px 8px;
     border: 1px solid var(--border);
     border-radius: 4px;
-    background: var(--bg);
+    background: var(--surface);
     transition: background 80ms, border-color 80ms;
   }
 
   .action:hover:not(:disabled) {
-    background: var(--accent-bg);
+    background: var(--accent-bg-soft);
     border-color: var(--accent);
   }
 
   .action:disabled {
-    color: var(--fg-faint);
+    color: var(--text-faint);
     cursor: not-allowed;
     opacity: 0.6;
   }
@@ -114,6 +143,7 @@
   ul {
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: 4px 4px 6px;
+    border-top: 1px solid var(--border-soft);
   }
 </style>

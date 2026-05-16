@@ -1,35 +1,62 @@
-/* Light/dark theme variables driven by [data-theme] on <html>. */
+/**
+ * V3 design tokens. Theme switches the values; semantic names stay constant.
+ * The trailing block re-exports the V2 token names as aliases pointing at the
+ * V3 equivalents so existing component CSS keeps working until each file is
+ * migrated.
+ */
+
 :root,
 html[data-theme='light'] {
-  --bg: #ffffff;
-  --bg-elevated: #f7f7f8;
-  --bg-hover: #ececef;
-  --bg-active: #e2e2e6;
-  --fg: #1a1a1a;
-  --fg-muted: #6b6b6e;
-  --fg-faint: #9a9aa0;
-  --border: #e0e0e3;
-  --accent: #2563eb;
-  --accent-bg: #dbeafe;
+  /* V3 — Light */
+  --bg: #faf9f6;
+  --bg-raised: #fffefb;
+  --surface: #ffffff;
+  --surface-hover: #f4f3ef;
+  --border: #e6e4dc;
+  --border-soft: #ede9e0;
+  --text: #1a1a1d;
+  --text-dim: #3a3a40;
+  --text-mute: #6e6e76;
+  --text-faint: #8e8e93;
+  --accent: #d97757;
+  --accent-bg-soft: rgba(217, 119, 87, 0.10);
+  --accent-border: rgba(217, 119, 87, 0.28);
   --danger: #dc2626;
-  --drop-line: #2563eb;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --drop-line: #d97757;
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 html[data-theme='dark'] {
-  --bg: #1a1a1d;
-  --bg-elevated: #232327;
-  --bg-hover: #2c2c30;
-  --bg-active: #36363b;
-  --fg: #e8e8ea;
-  --fg-muted: #a0a0a4;
-  --fg-faint: #6a6a6e;
-  --border: #36363b;
-  --accent: #60a5fa;
-  --accent-bg: #1e3a8a40;
+  /* V3 — Dark */
+  --bg: #0a0a0c;
+  --bg-raised: #111114;
+  --surface: #17171a;
+  --surface-hover: #1c1c20;
+  --border: #18181b;
+  --border-soft: #1a1a1d;
+  --text: #e6e6e8;
+  --text-dim: #c9c9d0;
+  --text-mute: #9a9aa3;
+  --text-faint: #6b6b73;
+  --accent: #d97757;
+  --accent-bg-soft: rgba(217, 119, 87, 0.10);
+  --accent-border: rgba(217, 119, 87, 0.22);
   --danger: #f87171;
-  --drop-line: #60a5fa;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --drop-line: #d97757;
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* V2 → V3 aliases. Remove these once every component is migrated. */
+:root,
+html[data-theme='light'],
+html[data-theme='dark'] {
+  --bg-elevated: var(--bg-raised);
+  --bg-hover: var(--surface-hover);
+  --bg-active: var(--surface);
+  --fg: var(--text);
+  --fg-muted: var(--text-mute);
+  --fg-faint: var(--text-faint);
+  --accent-bg: var(--accent-bg-soft);
 }
 
 *,
@@ -44,10 +71,10 @@ body {
   padding: 0;
   height: 100%;
   font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', sans-serif;
-  font-size: 14px;
-  color: var(--fg);
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue',
+    'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--text);
   background: var(--bg);
 }
 
@@ -65,6 +92,11 @@ input {
   color: inherit;
 }
 
+/* Tabular numerals for stat counters etc. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -80,5 +112,5 @@ input {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-faint);
+  background: var(--text-faint);
 }

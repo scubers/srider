@@ -9,19 +9,27 @@
   import type { TabRef, WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
   import { settingsStore } from '$shared/stores.svelte';
-  import { isSafeFaviconUrl } from '$shared/url';
+  import { extractGroupingDomain } from '$shared/url';
   import { makeTabDragData, makeTabDropData } from '../dnd';
   import { activeTabStore } from '../active-tab.svelte';
+  import Favicon from './Favicon.svelte';
 
   let {
     tab,
     groupId,
     window: win,
+    /**
+     * 'dot' inside auto-domain groups (the card header already shows the
+     * domain favicon, so each row gets a small placeholder). 'favicon'
+     * everywhere else (manual groups, untracked) — each row shows the page's
+     * own favicon with a colored-letter fallback.
+     */
+    iconVariant = 'favicon',
   }: {
     tab: TabRef;
-    /** null means the tab lives in untrackedTabs. */
     groupId: string | null;
     window: WindowState;
+    iconVariant?: 'dot' | 'favicon';
   } = $props();
 
   let rootEl: HTMLDivElement | undefined = $state();
@@ -33,12 +41,8 @@
     tab.chromeTabId !== null && tab.chromeTabId === activeTabStore.chromeTabId,
   );
   const isPinned = $derived(tab.pinned === true);
-  /** Pin only has meaning inside a group; untrackedTabs entries can't be pinned. */
   const canPin = $derived(groupId !== null);
-  const showFavicon = $derived(settingsStore.value.showFavicons);
-  const safeFavicon = $derived(
-    tab.favIconUrl && isSafeFaviconUrl(tab.favIconUrl) ? tab.favIconUrl : null,
-  );
+  const host = $derived(extractGroupingDomain(tab.url) ?? tab.url ?? '?');
 
   onMount(() => {
     if (!rootEl) return;
@@ -100,7 +104,7 @@
 
   async function togglePin(e: MouseEvent) {
     e.stopPropagation();
-    if (groupId === null) return; // shouldn't happen — pin hidden in untracked
+    if (groupId === null) return;
     await sendMessage({
       type: 'setTabPinned',
       windowId: win.id,
@@ -111,8 +115,6 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    // Only handle keys on the row itself; if a child button (e.g. remove)
-    // is focused and bubbles up, ignore — that button has its own handler.
     if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -139,16 +141,12 @@
   onkeydown={onKeydown}
   title={tab.url}
 >
-  {#if showFavicon}
-    <span class="favicon">
-      {#if safeFavicon}
-        <img src={safeFavicon} alt="" width="14" height="14" />
-      {:else}
-        <span class="favicon-fallback">{isLive ? '●' : '○'}</span>
-      {/if}
-    </span>
+  {#if iconVariant === 'dot'}
+    <span class="dot" aria-hidden="true"></span>
   {:else}
-    <span class="dot">{isLive ? '●' : '○'}</span>
+    <span class="favicon-wrap" aria-hidden="true">
+      <Favicon src={tab.favIconUrl} {host} size={14} />
+    </span>
   {/if}
 
   <span class="title">{tab.title || tab.url}</span>
@@ -161,21 +159,11 @@
       aria-label={isPinned ? '取消固定' : '固定'}
       aria-pressed={isPinned}
     >
-      <!-- thumbtack: filled when pinned, outline when not -->
-      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
         {#if isPinned}
-          <path
-            fill="currentColor"
-            d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"
-          />
+          <path fill="currentColor" d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"/>
         {:else}
-          <path
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.2"
-            stroke-linejoin="round"
-            d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"
-          />
+          <path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"/>
         {/if}
       </svg>
     </button>
@@ -194,26 +182,17 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 5px;
-    padding: 3px 4px 3px 16px;
-    border-radius: 4px;
+    gap: 8px;
+    height: 28px;
+    padding: 0 8px 0 10px;
+    border-radius: 5px;
     cursor: pointer;
-    color: var(--fg);
+    color: var(--text-dim);
     min-width: 0;
   }
 
   .tab:hover {
-    background: var(--bg-hover);
-  }
-
-  /* Currently-focused Chrome tab. The inset box-shadow draws a left bar
-     without taking up a pseudo-element slot (::before/::after are claimed
-     by the drag drop-line indicators). */
-  .tab.active {
-    background: var(--accent-bg);
-    color: var(--fg);
-    font-weight: 500;
-    box-shadow: inset 2px 0 0 var(--accent);
+    background: var(--surface-hover);
   }
 
   .tab:focus-visible {
@@ -222,7 +201,13 @@
   }
 
   .tab.saved {
-    color: var(--fg-muted);
+    color: var(--text-mute);
+  }
+
+  /* Active = accent-tinted soft background, no border, no left bar. */
+  .tab.active {
+    background: var(--accent-bg-soft);
+    color: var(--text);
   }
 
   .tab.dragging {
@@ -234,9 +219,10 @@
     content: '';
     position: absolute;
     left: 8px;
-    right: 6px;
+    right: 8px;
     height: 2px;
     background: var(--drop-line);
+    border-radius: 1px;
     z-index: 2;
   }
 
@@ -248,30 +234,27 @@
     bottom: -1px;
   }
 
-  .favicon {
+  .dot {
+    flex: 0 0 5px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    margin-left: 4px;
+    margin-right: 1px;
+  }
+
+  .tab.active .dot {
+    background: var(--accent);
+  }
+
+  .favicon-wrap {
     flex: 0 0 14px;
+    width: 14px;
+    height: 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
-  }
-
-  .favicon img {
-    width: 14px;
-    height: 14px;
-    object-fit: contain;
-  }
-
-  .favicon-fallback,
-  .dot {
-    font-size: 9px;
-    color: var(--fg-faint);
-  }
-
-  .tab.live .favicon-fallback,
-  .tab.live .dot {
-    color: var(--accent);
   }
 
   .title {
@@ -280,7 +263,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13.5px;
+    font-size: 12.5px;
+    line-height: 1.35;
   }
 
   .pin,
@@ -289,7 +273,7 @@
     width: 16px;
     height: 16px;
     border-radius: 4px;
-    color: var(--fg-faint);
+    color: var(--text-faint);
     font-size: 14px;
     line-height: 1;
     display: inline-flex;
@@ -299,7 +283,6 @@
     transition: opacity 80ms, background 80ms, color 80ms;
   }
 
-  /* Pinned tabs always show the pin icon so users see the state at rest. */
   .tab.pinned .pin {
     opacity: 1;
     color: var(--accent);
@@ -313,12 +296,12 @@
   }
 
   .pin:hover {
-    background: var(--bg-active);
+    background: var(--surface);
     color: var(--accent);
   }
 
   .remove:hover {
-    background: var(--bg-active);
+    background: var(--surface);
     color: var(--danger);
   }
 </style>

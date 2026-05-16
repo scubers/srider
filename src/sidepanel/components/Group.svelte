@@ -14,6 +14,8 @@
 
   let { group, window: win }: { group: GroupType; window: WindowState } = $props();
 
+  const isAuto = $derived(group.kind === 'auto-domain');
+
   let rootEl: HTMLDivElement | undefined = $state();
   let hoverEdge: Edge | null = $state(null);
   let isDragging = $state(false);
@@ -37,7 +39,6 @@
         },
         getData: ({ input, element, source }) => {
           const base = makeGroupDropData(group.id) as unknown as Record<string, unknown>;
-          // Edge attachment is only meaningful for group-on-group reorders.
           const sourceData = source.data as { kind?: string };
           if (sourceData.kind === 'group') {
             return attachClosestEdge(base, {
@@ -77,7 +78,7 @@
 
 <div
   bind:this={rootEl}
-  class="group"
+  class="card"
   class:dragging={isDragging}
   class:edge-top={hoverEdge === 'top'}
   class:edge-bottom={hoverEdge === 'bottom'}
@@ -88,7 +89,12 @@
     <ul class="tabs" role="list">
       {#each group.tabs as tab (tab.id)}
         <li>
-          <TabItem {tab} groupId={group.id} window={win} />
+          <TabItem
+            {tab}
+            groupId={group.id}
+            window={win}
+            iconVariant={isAuto ? 'dot' : 'favicon'}
+          />
         </li>
       {/each}
       {#if group.tabs.length === 0}
@@ -99,45 +105,51 @@
 </div>
 
 <style>
-  .group {
+  .card {
     position: relative;
-    border-bottom: 1px solid var(--border);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    margin-bottom: 6px;
     transition: opacity 120ms;
+    overflow: hidden;
   }
 
-  .group.dragging {
+  .card.dragging {
     opacity: 0.4;
   }
 
-  .group.edge-top::before,
-  .group.edge-bottom::after {
+  .card.edge-top::before,
+  .card.edge-bottom::after {
     content: '';
     position: absolute;
     left: 0;
     right: 0;
     height: 2px;
     background: var(--drop-line);
+    border-radius: 1px;
     z-index: 2;
   }
 
-  .group.edge-top::before {
-    top: -1px;
+  .card.edge-top::before {
+    top: -3px;
   }
 
-  .group.edge-bottom::after {
-    bottom: -1px;
+  .card.edge-bottom::after {
+    bottom: -3px;
   }
 
   .tabs {
     list-style: none;
     margin: 0;
-    padding: 2px 0 6px;
+    padding: 4px 4px 6px;
+    border-top: 1px solid var(--border-soft);
   }
 
   .empty {
-    padding: 4px 16px;
+    padding: 6px 14px;
     font-size: 12px;
-    color: var(--fg-faint);
+    color: var(--text-faint);
     font-style: italic;
   }
 </style>

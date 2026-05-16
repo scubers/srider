@@ -3,8 +3,10 @@
   import { applyTheme, watchSystemTheme } from '$shared/theme';
   import { sendMessage } from '$shared/messages';
   import Header from './components/Header.svelte';
+  import StatsBar from './components/StatsBar.svelte';
   import GroupList from './components/GroupList.svelte';
   import UntrackedSection from './components/UntrackedSection.svelte';
+  import ActivePageCard from './components/ActivePageCard.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import { setupGlobalDnD } from './dnd';
   import { activeTabStore } from './active-tab.svelte';
@@ -60,13 +62,8 @@
   });
 
   /**
-   * Follow the active Chrome tab in the panel:
-   *   - if it lives in a collapsed group, expand that group;
-   *   - then scroll the corresponding TabItem into view.
-   *
-   * Reading `g.collapsed` inside this effect makes Svelte re-run it after the
-   * expansion lands in storage, so the scroll happens against the expanded
-   * DOM rather than the still-collapsed one.
+   * Follow the active Chrome tab: expand its group (if collapsed) and scroll
+   * the matching TabItem into view.
    */
   $effect(() => {
     const activeChromeTabId = activeTabStore.chromeTabId;
@@ -91,8 +88,6 @@
     if (foundTabRefId === null) return;
 
     if (collapsedGroupId !== null) {
-      // Trigger expansion; this effect will re-run once the storage update
-      // lands (g.collapsed → false) and then take the scroll branch.
       void sendMessage({
         type: 'toggleGroupCollapsed',
         windowId: w.id,
@@ -102,7 +97,6 @@
       return;
     }
 
-    // Defer scroll to the next frame so the DOM has the latest layout.
     const tabRefId = foundTabRefId;
     requestAnimationFrame(() => {
       const el = document.querySelector<HTMLElement>(
@@ -120,6 +114,7 @@
     <div class="loading">正在匹配窗口…</div>
   {:else}
     <Header window={windowState} />
+    <StatsBar window={windowState} />
     <main class="content">
       {#if windowState.groups.length === 0 && windowState.untrackedTabs.length === 0}
         <EmptyState />
@@ -128,6 +123,7 @@
         {#if windowState.untrackedTabs.length > 0}
           <UntrackedSection window={windowState} />
         {/if}
+        <ActivePageCard window={windowState} />
       {/if}
     </main>
   {/if}
@@ -139,17 +135,18 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
+    background: var(--bg);
   }
 
   .content {
     flex: 1;
     overflow-y: auto;
-    padding: 4px 0 12px;
+    padding: 0 10px 14px;
   }
 
   .loading {
     padding: 24px;
-    color: var(--fg-muted);
+    color: var(--text-mute);
     text-align: center;
   }
 </style>
