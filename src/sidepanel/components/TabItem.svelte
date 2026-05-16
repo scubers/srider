@@ -183,7 +183,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 28px;
+    height: 30px;
     padding: 0 8px 0 10px;
     border-radius: 5px;
     cursor: pointer;
@@ -204,10 +204,14 @@
     color: var(--text-mute);
   }
 
-  /* Active = accent-tinted soft background, no border, no left bar. */
+  /* Active = accent-tinted soft background, bold text; no border, no left bar. */
   .tab.active {
     background: var(--accent-bg-soft);
     color: var(--text);
+  }
+
+  .tab.active .title {
+    font-weight: 600;
   }
 
   .tab.dragging {
@@ -263,7 +267,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
+    font-size: 13.5px;
     line-height: 1.35;
   }
 
