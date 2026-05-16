@@ -6,6 +6,7 @@
   import UntrackedSection from './components/UntrackedSection.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import { setupGlobalDnD } from './dnd';
+  import { activeTabStore } from './active-tab.svelte';
   import type { WindowState } from '$shared/types';
 
   let chromeWindowId = $state<number | null>(null);
@@ -31,6 +32,11 @@
       if (cancelled) return;
       chromeWindowId = w.id ?? null;
 
+      if (chromeWindowId !== null) {
+        await activeTabStore.init(chromeWindowId);
+      }
+      if (cancelled) return;
+
       applyTheme(settingsStore.value.theme);
       unwatchTheme = watchSystemTheme(() => applyTheme(settingsStore.value.theme));
 
@@ -41,6 +47,7 @@
       cancelled = true;
       unwatchTheme?.();
       unwatchDnd?.();
+      activeTabStore.destroy();
       appDataStore.destroy();
       settingsStore.destroy();
     };

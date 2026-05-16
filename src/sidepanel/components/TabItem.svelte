@@ -11,6 +11,7 @@
   import { settingsStore } from '$shared/stores.svelte';
   import { isSafeFaviconUrl } from '$shared/url';
   import { makeTabDragData, makeTabDropData } from '../dnd';
+  import { activeTabStore } from '../active-tab.svelte';
 
   let {
     tab,
@@ -28,6 +29,9 @@
   let isDragging = $state(false);
 
   const isLive = $derived(tab.chromeTabId !== null);
+  const isActive = $derived(
+    tab.chromeTabId !== null && tab.chromeTabId === activeTabStore.chromeTabId,
+  );
   const showFavicon = $derived(settingsStore.value.showFavicons);
   const safeFavicon = $derived(
     tab.favIconUrl && isSafeFaviconUrl(tab.favIconUrl) ? tab.favIconUrl : null,
@@ -107,11 +111,13 @@
   class="tab"
   class:live={isLive}
   class:saved={!isLive}
+  class:active={isActive}
   class:dragging={isDragging}
   class:edge-top={hoverEdge === 'top'}
   class:edge-bottom={hoverEdge === 'bottom'}
   role="button"
   tabindex="0"
+  aria-current={isActive ? 'true' : undefined}
   onclick={onActivate}
   onkeydown={onKeydown}
   title={tab.url}
@@ -153,6 +159,16 @@
 
   .tab:hover {
     background: var(--bg-hover);
+  }
+
+  /* Currently-focused Chrome tab. The inset box-shadow draws a left bar
+     without taking up a pseudo-element slot (::before/::after are claimed
+     by the drag drop-line indicators). */
+  .tab.active {
+    background: var(--accent-bg);
+    color: var(--fg);
+    font-weight: 500;
+    box-shadow: inset 2px 0 0 var(--accent);
   }
 
   .tab:focus-visible {
