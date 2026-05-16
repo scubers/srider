@@ -32,6 +32,8 @@ export interface TabRef {
   addedAt: number;
 }
 
+export type GroupKind = 'manual' | 'auto-domain';
+
 export interface Group {
   id: GroupId;
   name: string;
@@ -39,6 +41,15 @@ export interface Group {
   /** Order is array position. Do not introduce an `order` field. */
   tabs: TabRef[];
   createdAt: number;
+  /**
+   * Provenance: 'manual' = user created via the + button (default for legacy
+   * data where this field is missing). 'auto-domain' = created by the
+   * auto-group-by-domain action and reused when more tabs from the same
+   * domain are auto-grouped later.
+   */
+  kind?: GroupKind;
+  /** For auto-domain groups: the hostname used as the merge key. */
+  autoDomain?: string;
 }
 
 export interface WindowState {

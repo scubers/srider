@@ -6,7 +6,7 @@
  */
 import { getAppData } from '$shared/storage';
 import { uuid } from '$shared/id';
-import { isSafeNavigationUrl } from '$shared/url';
+import { extractGroupingDomain, isSafeNavigationUrl } from '$shared/url';
 import type {
   AppData,
   Group,
@@ -78,6 +78,8 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await closeLiveTab(msg);
       case 'addUrlToGroup':
         return await addUrlToGroup(msg);
+      case 'autoGroupByDomain':
+        return await autoGroupByDomain(msg);
       default: {
         // Exhaustiveness check: adding a new Message variant must add a case here.
         const exhaustive: never = msg;
@@ -338,6 +340,60 @@ async function addUrlToGroup(
       addedAt: Date.now(),
     };
     group.tabs.push(newRef);
+  });
+  return { ok: true };
+}
+
+async function autoGroupByDomain(
+  msg: Extract<Message, { type: 'autoGroupByDomain' }>,
+): Promise<MessageResponse> {
+  await withAppData((data) => {
+    const window = getWindow(data, msg.windowId);
+    if (!window) throw new Error(`window ${msg.windowId} not found`);
+
+    // Index existing auto-domain groups by their domain key for O(1) merge.
+    const autoByDomain = new Map<string, Group>();
+    for (const g of window.groups) {
+      if (g.kind === 'auto-domain' && g.autoDomain) {
+        autoByDomain.set(g.autoDomain, g);
+      }
+    }
+
+    // Bucket untrackedTabs by domain; ungroupable tabs stay behind.
+    const remaining: TabRef[] = [];
+    const buckets = new Map<string, TabRef[]>();
+    for (const tab of window.untrackedTabs) {
+      const domain = extractGroupingDomain(tab.url);
+      if (!domain) {
+        remaining.push(tab);
+        continue;
+      }
+      const list = buckets.get(domain);
+      if (list) list.push(tab);
+      else buckets.set(domain, [tab]);
+    }
+    window.untrackedTabs = remaining;
+
+    // For each domain bucket, merge into an existing auto-domain group or
+    // create a new one.
+    for (const [domain, tabs] of buckets) {
+      let group = autoByDomain.get(domain);
+      if (!group) {
+        group = {
+          id: uuid(),
+          name: domain,
+          collapsed: false,
+          tabs: [],
+          createdAt: Date.now(),
+          kind: 'auto-domain',
+          autoDomain: domain,
+        };
+        window.groups.push(group);
+        autoByDomain.set(domain, group);
+      }
+      // Append (preserving relative order from untrackedTabs).
+      for (const tab of tabs) group.tabs.push(tab);
+    }
   });
   return { ok: true };
 }

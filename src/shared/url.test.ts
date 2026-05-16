@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSafeNavigationUrl, isSafeFaviconUrl } from './url';
+import { isSafeNavigationUrl, isSafeFaviconUrl, extractGroupingDomain } from './url';
 
 describe('isSafeNavigationUrl', () => {
   it('allows http and https', () => {
@@ -44,5 +44,32 @@ describe('isSafeFaviconUrl', () => {
 
   it('rejects javascript: scheme', () => {
     expect(isSafeFaviconUrl('javascript:void(0)')).toBe(false);
+  });
+});
+
+describe('extractGroupingDomain', () => {
+  it('returns the hostname for http/https URLs', () => {
+    expect(extractGroupingDomain('https://github.com/foo/bar')).toBe('github.com');
+    expect(extractGroupingDomain('http://example.com')).toBe('example.com');
+  });
+
+  it('strips a leading "www." (URL also lowercases the host per spec)', () => {
+    expect(extractGroupingDomain('https://www.example.com')).toBe('example.com');
+    expect(extractGroupingDomain('https://WWW.Example.com')).toBe('example.com');
+  });
+
+  it('preserves other subdomains (no eTLD+1 awareness)', () => {
+    expect(extractGroupingDomain('https://mail.google.com')).toBe('mail.google.com');
+    expect(extractGroupingDomain('https://drive.google.com')).toBe('drive.google.com');
+  });
+
+  it('returns null for URLs without a host', () => {
+    expect(extractGroupingDomain('about:blank')).toBeNull();
+    expect(extractGroupingDomain('javascript:alert(1)')).toBeNull();
+  });
+
+  it('returns null for unparseable input', () => {
+    expect(extractGroupingDomain('not a url')).toBeNull();
+    expect(extractGroupingDomain('')).toBeNull();
   });
 });

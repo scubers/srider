@@ -57,6 +57,16 @@ export type Message =
       url: string;
       title?: string;
       chromeTabId?: number;
+    }
+  | {
+      /**
+       * Distribute every TabRef currently in WindowState.untrackedTabs into
+       * auto-domain groups, one per hostname. Tabs whose URL has no
+       * groupable host stay in untrackedTabs. Existing auto-domain groups
+       * with matching domain receive the merge.
+       */
+      type: 'autoGroupByDomain';
+      windowId: WindowUUID;
     };
 
 export type MessageResponse = { ok: true } | { ok: false; error: string };

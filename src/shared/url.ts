@@ -39,3 +39,25 @@ export function isSafeFaviconUrl(url: string): boolean {
   }
   return SAFE_FAVICON_SCHEMES.has(parsed.protocol);
 }
+
+/**
+ * Extract a hostname suitable for domain-based grouping. Returns null for
+ * URLs that don't have a meaningful host (e.g. about:blank, javascript:).
+ *
+ * This is a simple hostname (not eTLD+1) — subdomains like `mail.google.com`
+ * and `drive.google.com` will produce separate keys. Computing eTLD+1
+ * requires bundling a public-suffix list; v1 keeps it simple. Users can
+ * rename auto groups freely.
+ */
+export function extractGroupingDomain(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!parsed.hostname) return null;
+  // Strip a leading "www." for nicer labels; treat `www.x.com` and `x.com`
+  // as the same domain for grouping purposes.
+  return parsed.hostname.replace(/^www\./i, '');
+}

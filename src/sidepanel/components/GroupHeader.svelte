@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Group, WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
+  import { isSafeFaviconUrl } from '$shared/url';
   import RenameInput from './RenameInput.svelte';
 
   let {
@@ -12,6 +13,16 @@
     window: WindowState;
     onToggle: () => void | Promise<void>;
   } = $props();
+
+  const isAuto = $derived(group.kind === 'auto-domain');
+  /** Borrow a favicon from the first member tab that has a safe one. */
+  const groupIcon = $derived.by(() => {
+    if (!isAuto) return null;
+    for (const t of group.tabs) {
+      if (t.favIconUrl && isSafeFaviconUrl(t.favIconUrl)) return t.favIconUrl;
+    }
+    return null;
+  });
 
   let renaming = $state(false);
   let menuOpen = $state(false);
@@ -56,9 +67,21 @@
   {:else}
     <button
       class="name"
+      class:auto={isAuto}
       ondblclick={() => (renaming = true)}
-      title="双击重命名"
+      title={isAuto && group.autoDomain
+        ? `自动分组（域名：${group.autoDomain}） — 双击重命名`
+        : '双击重命名'}
     >
+      {#if isAuto}
+        <span class="auto-icon">
+          {#if groupIcon}
+            <img src={groupIcon} alt="" width="14" height="14" />
+          {:else}
+            <span class="auto-fallback" aria-hidden="true">⌘</span>
+          {/if}
+        </span>
+      {/if}
       <span class="name-text">{group.name}</span>
       <span class="count">({liveCount}/{group.tabs.length})</span>
     </button>
@@ -113,6 +136,26 @@
 
   .name:hover {
     background: var(--bg-hover);
+  }
+
+  .auto-icon {
+    flex: 0 0 14px;
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .auto-icon img {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+  }
+
+  .auto-fallback {
+    font-size: 10px;
+    color: var(--fg-muted);
   }
 
   .name-text {

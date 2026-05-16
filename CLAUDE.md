@@ -50,7 +50,8 @@ Not yet installed. When scaffolding:
 ## Conventions specific to this design
 
 - **Order is encoded as array position**, not an `order: number` field. When reordering, mutate the array.
-- **No "active group" concept.** Every newly-created Chrome tab goes into `WindowState.untrackedTabs`. Users drag tabs into groups manually.
+- **No "active group" concept.** Every newly-created Chrome tab goes into `WindowState.untrackedTabs`. Users drag tabs into groups manually, or click "按域名分组" to auto-distribute.
+- **Two group kinds** (`Group.kind`): `manual` (user `+` button — default if field missing) and `auto-domain` (created by autoGroupByDomain). Auto-domain groups have an `autoDomain` field used to merge later auto-group passes; renaming an auto-domain group keeps its merge identity.
 - **Close behavior depends on `TabRef.pinned`.** Inside a group: pinned → become `saved` (chromeTabId = null); unpinned → removed from `group.tabs` entirely. In `untrackedTabs`: always removed (no pin concept).
 - **Deleting a group does not close its tabs.** `live` tabs move to `untrackedTabs`; `saved` tabs are discarded. The spec explains why (§6.9).
 - **Tab navigation updates `TabRef.url`** — a TabRef represents "that tab" persistently, following it through navigation.

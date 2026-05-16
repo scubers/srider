@@ -15,6 +15,8 @@
 - 分组可拖动重排
 - 标签可在组内重排，可跨组拖动
 - 浏览器原生标签可拖入侧边栏分组
+- 分组有两种来源：**手动分组**（用户主动建）和 **自动分组**（"按域名分组"动作生成）
+- "按域名分组"按钮：把"未归类"区段里的标签按 hostname 整理到 auto-domain 分组里；同域名已存在 auto-domain 分组则合并
 - 新打开的标签自动进入"未归类"区段，用户手动拖入分组
 - 分组内的标签可以"固定"（pin）；关闭时未 pin 的从分组里删除，pin 过的留作 saved（灰色）
 - 每个浏览器窗口拥有独立的分组集
@@ -101,12 +103,16 @@ interface WindowState {
   fingerprintUpdatedAt: number;
 }
 
+type GroupKind = 'manual' | 'auto-domain';
+
 interface Group {
   id: string;
   name: string;
   collapsed: boolean;
   tabs: TabRef[];      // 顺序即显示顺序
   createdAt: number;
+  kind?: GroupKind;    // 缺省视为 'manual'（兼容旧数据）
+  autoDomain?: string; // 仅 auto-domain 分组：用于合并的 hostname key
 }
 
 interface TabRef {
@@ -400,6 +406,30 @@ SW：
 ```
 
 `chrome.commands` 事件算作用户手势，满足 `chrome.sidePanel.open` 对手势的要求。
+
+### 6.12 按域名自动分组
+
+```
+UI（未归类区段的"按域名分组"按钮）发 { type: 'autoGroupByDomain', windowId }
+  └─> SW:
+        1. 找到 WindowState
+        2. 把现有的 auto-domain 分组建一个 Map<autoDomain, Group> 索引
+        3. 遍历 untrackedTabs：
+             - 用 extractGroupingDomain(tab.url) 取 hostname（去掉 leading "www."）
+             - 无 host（about:、javascript: 等）→ 留在 untrackedTabs
+             - 有 host → 按 domain 入桶
+        4. 把 untrackedTabs 替换成"留下的"那部分
+        5. 对每个 domain 桶：
+             - Map 命中已有 auto-domain 分组 → append 进去
+             - 未命中 → 新建一个 { kind:'auto-domain', autoDomain:domain, name:domain }
+        6. 写入 storage
+```
+
+**合并语义**：再次点击按钮、或后续手动把同域名标签留在 untrackedTabs 后再点击，会**追加**到已有的 auto-domain 分组里，不会复制。
+
+**用户可以重命名 auto-domain 分组**——`autoDomain` 字段独立于 `name` 保留，所以即使重命名后，下次按钮触发时仍能合并进去。
+
+**hostname 而非 eTLD+1**：`mail.google.com` 和 `drive.google.com` 会成为两个不同的分组。要做 eTLD+1 需要打包 public suffix list，v1 不做。用户随时可以手动把多个 auto-domain 分组的标签合并到一个手动分组里。
 
 ## 7. 存储与 Service Worker 生命周期
 
