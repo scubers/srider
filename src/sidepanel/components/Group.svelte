@@ -9,12 +9,19 @@
   import type { Group as GroupType, WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
   import { makeGroupDragData, makeGroupDropData } from '../dnd';
+  import { activeTabStore } from '../active-tab.svelte';
   import GroupHeader from './GroupHeader.svelte';
   import TabItem from './TabItem.svelte';
 
   let { group, window: win }: { group: GroupType; window: WindowState } = $props();
 
   const isAuto = $derived(group.kind === 'auto-domain');
+  /** Card-level highlight: light up the entire card when the currently
+      focused Chrome tab lives inside this group. */
+  const hasActiveTab = $derived(
+    activeTabStore.chromeTabId !== null &&
+      group.tabs.some((t) => t.chromeTabId === activeTabStore.chromeTabId),
+  );
 
   let rootEl: HTMLDivElement | undefined = $state();
   let hoverEdge: Edge | null = $state(null);
@@ -80,6 +87,7 @@
   bind:this={rootEl}
   class="card"
   class:dragging={isDragging}
+  class:has-active={hasActiveTab}
   class:edge-top={hoverEdge === 'top'}
   class:edge-bottom={hoverEdge === 'bottom'}
   data-group-id={group.id}
@@ -111,8 +119,15 @@
     border: 1px solid var(--border-soft);
     border-radius: 8px;
     margin-bottom: 6px;
-    transition: opacity 120ms;
+    transition: opacity 120ms, background 120ms, border-color 120ms;
     overflow: hidden;
+  }
+
+  /* When the currently focused Chrome tab lives in this group, light up
+     the entire card. */
+  .card.has-active {
+    background: linear-gradient(180deg, var(--accent-bg-soft), var(--bg-raised));
+    border-color: var(--accent-border);
   }
 
   .card.dragging {

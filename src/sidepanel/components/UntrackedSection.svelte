@@ -4,12 +4,18 @@
   import type { WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
   import { makeUntrackedDropData } from '../dnd';
+  import { activeTabStore } from '../active-tab.svelte';
   import TabItem from './TabItem.svelte';
 
   let { window: win }: { window: WindowState } = $props();
   let rootEl: HTMLElement | undefined = $state();
   let isOver = $state(false);
   let busy = $state(false);
+
+  const hasActiveTab = $derived(
+    activeTabStore.chromeTabId !== null &&
+      win.untrackedTabs.some((t) => t.chromeTabId === activeTabStore.chromeTabId),
+  );
 
   onMount(() => {
     if (!rootEl) return;
@@ -37,7 +43,12 @@
   }
 </script>
 
-<section bind:this={rootEl} class="card" class:over={isOver}>
+<section
+  bind:this={rootEl}
+  class="card"
+  class:over={isOver}
+  class:has-active={hasActiveTab}
+>
   <div class="header">
     <span class="icon" aria-hidden="true">
       <svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2 4h4l1.5 1.5h6.5v7.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z"/></svg>
@@ -70,8 +81,16 @@
     border-radius: 8px;
     margin-bottom: 6px;
     overflow: hidden;
+    transition: background 120ms, border-color 120ms;
   }
 
+  /* Card-level highlight when the focused Chrome tab is currently untracked. */
+  .card.has-active {
+    background: linear-gradient(180deg, var(--accent-bg-soft), var(--bg-raised));
+    border-color: var(--accent-border);
+  }
+
+  /* Drag-over wins over has-active. */
   .card.over {
     border-color: var(--accent);
     background: var(--accent-bg-soft);

@@ -6,7 +6,6 @@
   import StatsBar from './components/StatsBar.svelte';
   import GroupList from './components/GroupList.svelte';
   import UntrackedSection from './components/UntrackedSection.svelte';
-  import ActivePageCard from './components/ActivePageCard.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import { setupGlobalDnD } from './dnd';
   import { activeTabStore } from './active-tab.svelte';
@@ -123,7 +122,6 @@
         {#if windowState.untrackedTabs.length > 0}
           <UntrackedSection window={windowState} />
         {/if}
-        <ActivePageCard window={windowState} />
       {/if}
     </main>
   {/if}
