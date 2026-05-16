@@ -1,0 +1,84 @@
+/* Light/dark theme variables driven by [data-theme] on <html>. */
+:root,
+html[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-elevated: #f7f7f8;
+  --bg-hover: #ececef;
+  --bg-active: #e2e2e6;
+  --fg: #1a1a1a;
+  --fg-muted: #6b6b6e;
+  --fg-faint: #9a9aa0;
+  --border: #e0e0e3;
+  --accent: #2563eb;
+  --accent-bg: #dbeafe;
+  --danger: #dc2626;
+  --drop-line: #2563eb;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme='dark'] {
+  --bg: #1a1a1d;
+  --bg-elevated: #232327;
+  --bg-hover: #2c2c30;
+  --bg-active: #36363b;
+  --fg: #e8e8ea;
+  --fg-muted: #a0a0a4;
+  --fg-faint: #6a6a6e;
+  --border: #36363b;
+  --accent: #60a5fa;
+  --accent-bg: #1e3a8a40;
+  --danger: #f87171;
+  --drop-line: #60a5fa;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-faint);
+}

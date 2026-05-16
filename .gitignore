@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vite/
+*.log
+.DS_Store
+coverage/
+.env.local
+.env*.local
+
+# Tooling state (autopilot, skills, etc.)
+.claude/
+.omc/

@@ -543,6 +543,19 @@ export default defineConfig({
 | 集成 | 手动 | 装到真实 Chrome 走主要流程 |
 | E2E | （v1 不做） | 未来用 Playwright 扩展模式 |
 
+## 11.5 安全模型
+
+少量必要的输入校验。详见 `src/shared/url.ts`。
+
+| 攻击面 | 校验 |
+|---|---|
+| 点击 saved 标签（`openSavedTab`）/ 添加外部 URL（`addUrlToGroup`） | 协议必须是 `http`/`https`/`ftp`/`file`/`about`/`chrome-extension` 之一；否则拒绝 |
+| 外部拖入侧边栏（`text/uri-list`、`text/plain`） | 同上 |
+| favicon `<img src>` | 必须是 `http(s)`/`chrome://`/`chrome-extension://`；data:/javascript: 拒绝 |
+| `chrome.runtime.onMessage` | 检查 `sender.id === chrome.runtime.id`，拒绝来自其他扩展的消息；并对 `msg.type` 做形状校验 |
+| 存储读写（`AppData.windows[key]`、`pendingOpens[url]`） | 用 `Object.hasOwn` 访问，过滤 `__proto__` / `constructor` / `prototype` 这类危险 key |
+| `pendingOpens` 容量 | 最多 100 条，超出按时间戳淘汰最旧的（避免无限增长） |
+
 ## 12. 已知风险与未决问题
 
 1. **从 Chrome 标签栏拖入侧边栏**依赖 dataTransfer 里只能拿到 URL，不能精确匹配 tabId。同 URL 多开时按"最近活动"启发式匹配，可能不准。

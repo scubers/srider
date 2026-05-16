@@ -1,0 +1,11 @@
+body {
+  font-size: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+#app {
+  width: 100%;
+  max-width: 560px;
+  padding: 32px 24px;
+}
