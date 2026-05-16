@@ -27,18 +27,12 @@
     return () => document.removeEventListener('mousedown', onDocClick);
   });
 
-  const isActive = $derived(win.activeGroupId === group.id);
   const liveCount = $derived(group.tabs.filter((t) => t.chromeTabId !== null).length);
 
   async function commitRename(name: string) {
     renaming = false;
     if (!name || name === group.name) return;
     await sendMessage({ type: 'renameGroup', windowId: win.id, groupId: group.id, name });
-  }
-
-  async function setActive() {
-    menuOpen = false;
-    await sendMessage({ type: 'setActiveGroup', windowId: win.id, groupId: group.id });
   }
 
   async function deleteGroup() {
@@ -48,7 +42,7 @@
   }
 </script>
 
-<div class="header" class:active={isActive}>
+<div class="header">
   <button
     class="caret"
     onclick={() => onToggle()}
@@ -67,7 +61,6 @@
     >
       <span class="name-text">{group.name}</span>
       <span class="count">({liveCount}/{group.tabs.length})</span>
-      {#if isActive}<span class="active-tag">活动</span>{/if}
     </button>
   {/if}
 
@@ -75,8 +68,7 @@
     <button class="menu-btn" onclick={() => (menuOpen = !menuOpen)} aria-label="更多操作">⋯</button>
     {#if menuOpen}
       <div class="menu" role="menu">
-        <button role="menuitem" onclick={() => (renaming = true, (menuOpen = false))}>重命名</button>
-        <button role="menuitem" disabled={isActive} onclick={setActive}>设为活动分组</button>
+        <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>重命名</button>
         <button role="menuitem" class="danger" onclick={deleteGroup}>删除分组</button>
       </div>
     {/if}
@@ -90,12 +82,7 @@
     gap: 2px;
     padding: 4px 4px;
     background: var(--bg-elevated);
-    border-bottom: 1px solid transparent;
     min-width: 0;
-  }
-
-  .header.active {
-    border-bottom-color: var(--accent);
   }
 
   .caret {
@@ -140,15 +127,6 @@
   .count {
     color: var(--fg-muted);
     font-size: 11.5px;
-    flex-shrink: 0;
-  }
-
-  .active-tag {
-    background: var(--accent-bg);
-    color: var(--accent);
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 8px;
     flex-shrink: 0;
   }
 

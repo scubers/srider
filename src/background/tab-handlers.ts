@@ -235,6 +235,8 @@ export async function handleTabCreated(
       return;
     }
 
+    // New tabs always land in untrackedTabs. Users drag them into groups
+    // manually; there is no "active group" auto-routing.
     const newRef: TabRef = {
       id: uuid(),
       url,
@@ -243,13 +245,7 @@ export async function handleTabCreated(
       chromeTabId,
       addedAt: Date.now(),
     };
-
-    const activeGroup = state.groups.find((g) => g.id === state.activeGroupId);
-    if (activeGroup) {
-      activeGroup.tabs.push(newRef);
-    } else {
-      state.untrackedTabs.push(newRef);
-    }
+    state.untrackedTabs.push(newRef);
     updateFingerprint(state);
   });
 
@@ -286,14 +282,20 @@ export async function handleTabRemoved(
     for (const state of Object.values(data.windows)) {
       let changed = false;
       for (const group of state.groups) {
-        for (const t of group.tabs) {
-          if (t.chromeTabId === chromeTabId) {
-            t.chromeTabId = null; // becomes saved
-            changed = true;
+        const before = group.tabs.length;
+        group.tabs = group.tabs.filter((t) => {
+          if (t.chromeTabId !== chromeTabId) return true;
+          if (t.pinned) {
+            // Pinned: retain as saved (chromeTabId → null, URL preserved).
+            t.chromeTabId = null;
+            return true;
           }
-        }
+          // Unpinned: drop from the group entirely.
+          return false;
+        });
+        if (group.tabs.length !== before) changed = true;
       }
-      // Untracked tabs are live-only; drop them entirely.
+      // Untracked tabs are live-only and have no pin concept; drop them.
       const beforeUntracked = state.untrackedTabs.length;
       state.untrackedTabs = state.untrackedTabs.filter((t) => t.chromeTabId !== chromeTabId);
       if (state.untrackedTabs.length !== beforeUntracked) changed = true;

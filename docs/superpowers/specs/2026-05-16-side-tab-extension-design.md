@@ -15,11 +15,11 @@
 - 分组可拖动重排
 - 标签可在组内重排，可跨组拖动
 - 浏览器原生标签可拖入侧边栏分组
-- 新打开的标签自动加入"当前活动分组"
-- 关闭标签时，标签条目变为 saved 状态保留在分组里
+- 新打开的标签自动进入"未归类"区段，用户手动拖入分组
+- 分组内的标签可以"固定"（pin）；关闭时未 pin 的从分组里删除，pin 过的留作 saved（灰色）
 - 每个浏览器窗口拥有独立的分组集
 - 用户设置项（主题、favicon 显示、saved 点击行为、默认展开状态）
-- "未归类"区段收纳无法归入任何分组的 live 标签（无活动组时、删除分组后保留下来的等）
+- "未归类"区段：所有 live 但未分组的标签都在这里
 - 键盘快捷键 `Cmd/Ctrl+B`（可在 `chrome://extensions/shortcuts` 自定义）切换侧边栏显示/隐藏
 
 **非目标（v1 不做）**：
@@ -96,8 +96,7 @@ interface WindowState {
   id: WindowUUID;
   chromeWindowId: number | null;  // 当前会话的 Chrome windowId，重启后会变
   groups: Group[];                 // 顺序即显示顺序
-  activeGroupId: string | null;    // 新标签默认加入的分组；null 时新标签进 untrackedTabs
-  untrackedTabs: TabRef[];         // 未归类的 live 标签（无活动组时、删除分组后保留下来的等）
+  untrackedTabs: TabRef[];         // 所有不在分组里的 live 标签都在这
   fingerprint: string[];           // 标签 URL 集合，用于窗口重新关联
   fingerprintUpdatedAt: number;
 }
@@ -116,6 +115,7 @@ interface TabRef {
   title: string;
   favIconUrl?: string;
   chromeTabId: number | null;  // null = saved；number = live
+  pinned?: boolean;            // 仅分组内有意义；关闭时 pin 过的留作 saved，未 pin 的删除
   addedAt: number;
 }
 ```
@@ -135,9 +135,10 @@ interface Settings {
 
 1. `TabRef.id` 是稳定 UUID，而非 Chrome 的 tabId。Chrome 的 tabId 在会话重启后会变化，所以必须有自己的标签身份标识。`chromeTabId` 是"当前这个 TabRef 对应哪个真实 tab"的映射，会随会话变化。
 2. `fingerprint`（标签 URL 列表）用于窗口匹配。浏览器重启后 Chrome windowId 会变，靠"这个新窗口里的标签 URLs 是不是和某个存储的 WindowState 高度相似"重新关联。
-3. `activeGroupId` 可为 null。刚装上插件或没有任何分组时为 null，此时新开的标签暂不进任何组。
-4. 顺序由数组顺序决定，不引入 `order: number` 字段。
-5. `schemaVersion` 留好升级口子。
+3. **没有"活动分组"概念**。所有新打开的 Chrome 标签都进入 `untrackedTabs`；用户手动把它们拖入想要的分组。
+4. **pin 决定关闭行为**。分组内的 TabRef 关闭时：pin 过的 `chromeTabId` 置 null 留作 saved；未 pin 的直接从 `tabs` 数组删除。`untrackedTabs` 里的标签没有 pin 概念，关闭即丢弃（spec §6.2）。
+5. 顺序由数组顺序决定，不引入 `order: number` 字段。
+6. `schemaVersion` 留好升级口子。`pinned` 是可选字段，旧数据读出来 `undefined` 视为未 pin。
 
 ## 5. UI 设计
 
@@ -157,8 +158,8 @@ interface Settings {
 │                                       │
 │ ▶ 📁 学习 (3)              · · ·     │  Group header（折叠）
 │                                       │
-│ ▼ ⭐ 临时        ← 活动      · · ·   │  活动分组标记
-│    🌐  Google                        │
+│ ▼ ⭐ 临时                    · · ·   │
+│    🌐  Google              📌 ×      │  pin 状态图标（hover 才显示 × 关闭）
 │                                       │
 ├── 未归类 (2) ────────────────────────┤  untrackedTabs 区段
 │    🌐  about:blank                   │
@@ -169,8 +170,9 @@ interface Settings {
 **组件**：
 
 - **Header**：新建分组按钮 `+`，进入设置按钮 `⚙`
-- **GroupHeader**：折叠箭头、组名（双击进入重命名输入框）、标签计数徽章、活动组标记、"…" 菜单（重命名 / 设为活动组 / 删除组）
-- **TabItem**：favicon、标题（单行截断）、状态徽（live = 实色 / saved = 灰色）、悬停时显示关闭/移除按钮
+- **GroupHeader**：折叠箭头、组名（双击进入重命名输入框）、标签计数徽章 `(live/total)`、"…" 菜单（重命名 / 删除组）
+- **TabItem**：favicon、标题（单行截断）、状态徽（live = 实色 / saved = 灰色）、pin 图标（pin 后常显示，未 pin 仅 hover 时显示）、关闭/移除按钮
+- 当前正在浏览器里聚焦的 Chrome 标签在面板里高亮显示（左侧 accent 竖条 + 浅色背景）
 - **EmptyState**：当无任何分组时显示"拖动标签到这里、或新建分组"提示
 - **未归类区段**：面板底部固定区段，显示 `untrackedTabs` 中的标签。区段标题不可编辑，区段内的标签可拖入任意 Group。仅在 `untrackedTabs.length > 0` 时显示。
 
@@ -210,7 +212,7 @@ interface Settings {
 
 ## 6. 关键交互流程
 
-### 6.1 新标签创建（自动加入活动组）
+### 6.1 新标签创建（一律进未归类）
 
 ```
 chrome.tabs.onCreated 触发
@@ -218,18 +220,17 @@ chrome.tabs.onCreated 触发
        1. 从 chromeTabId 找出所属 chromeWindowId
        2. 查 chromeWindowId 对应的 WindowState（由 6.6 / 6.8 维护）
           ├─> 若窗口刚开还在匹配中（见 6.8）→ 把事件入队，等匹配完再回放
-          └─> 若没有对应 WindowState → 忽略事件（不应该发生，安全兜底）
+          └─> 若没有对应 WindowState → 延迟重试（有限次）
        3. 检查 pendingOpens：URL 命中则关联现有 TabRef（6.4 触发的）→ 完成
-       4. 找 WindowState.activeGroupId 对应的 Group
-          ├─> activeGroupId 为 null（无活动组）或 Group 不存在
-          │    → 把新标签登记为"未归类"（不写入任何 Group，但用 chromeTabId 索引保留，
-          │      以便后续 onRemoved/onUpdated 找得到）
-          └─> 否则在 Group.tabs 尾部追加新 TabRef { chromeTabId, url, title }
-       5. 写入 storage.local
+       4. 检查 state 里是否已有同 chromeTabId 的 TabRef（recovery 可能已建）
+          → 有 → 仅更新字段，不重复创建
+       5. 在 state.untrackedTabs 尾部追加新 TabRef { chromeTabId, url, title }
+          （没有"活动分组"，新标签一律进 untrackedTabs）
+       6. 写入 storage.local
             └─> storage.onChanged → Side Panel UI 自动刷新
 ```
 
-**"未归类"标签的存储**：`WindowState` 增加 `untrackedTabs: TabRef[]` 字段，UI 在面板底部显示一个"未归类"区段（非真正的 Group，不能重命名/折叠/设为活动），用户可拖入分组或右键"加入分组 X"。
+**"未归类"区段**：UI 显示 `state.untrackedTabs` 的内容。用户用拖拽或右键菜单把标签移入想要的分组。
 
 `pendingOpens` 是 SW 维护的短期映射：
 
@@ -242,14 +243,20 @@ pendingOpens: Map<url, { tabRefId, timestamp }>
 
 存储在 `chrome.storage.session` 中，SW 重启时不丢，浏览器重启时丢。
 
-### 6.2 标签关闭 → 变 saved
+### 6.2 标签关闭 → 看 pin
 
 ```
 chrome.tabs.onRemoved 触发
-  └─> SW: 找到 chromeTabId 对应的 TabRef
-        ├─> 把 chromeTabId 设为 null
-        └─> 立即写入 storage（不 debounce，防止 SW 被回收时丢数据）
+  └─> SW: 扫描所有 WindowState，对所有 chromeTabId 命中的 TabRef:
+        分组内的 TabRef:
+          ├─> tab.pinned === true  → chromeTabId 置 null（变 saved，灰色保留）
+          └─> tab.pinned 非 true   → 从 group.tabs 数组里删除
+        untrackedTabs 内的 TabRef:
+          └─> 一律删除（live-only 设计，没有 pin 概念）
+        立即写入 storage（不 debounce，防止 SW 被回收时丢数据）
 ```
+
+只有用户主动 pin 过的标签关闭后才会留在面板里。这避免了未 pin 标签关掉后还要再手动清理。
 
 ### 6.3 标签 URL/标题变更
 
@@ -316,7 +323,7 @@ SW 启动 (chrome.runtime.onStartup)
 ```
 chrome.windows.onRemoved 触发
   └─> SW: 找到对应 WindowState
-        ├─> 保留 groups、activeGroupId、fingerprint
+        ├─> 保留 groups、fingerprint
         ├─> chromeWindowId 设为 null
         ├─> 所有 group 内 TabRef.chromeTabId 置 null（变 saved）
         └─> untrackedTabs 清空（live-only 设计，无可恢复语义；
@@ -336,7 +343,7 @@ chrome.windows.onCreated 触发
         ├─> 计算新窗口的 URL 集合
         ├─> 与现存 WindowState.fingerprint 匹配（同 6.6）
         ├─> 命中 → 关联
-        └─> 未命中 → 创建新 WindowState（无分组、activeGroupId 为 null）
+        └─> 未命中 → 创建新 WindowState（无分组，已存在标签进 untrackedTabs）
         ──> 关闭缓冲模式，按顺序回放队列里的事件
 ```
 
@@ -349,10 +356,9 @@ UI 发出删除指令（含 groupId）
   └─> SW:
         ├─> 找到 Group
         ├─> 把 Group 里 chromeTabId !== null 的 TabRef 移到 untrackedTabs
-        │    （这些 live 标签不关闭，只是脱离分组）
+        │    （这些 live 标签不关闭，只是脱离分组，pin 状态丢弃）
         ├─> 丢弃 Group 里所有 saved TabRef
         ├─> 从 groups 数组移除 Group
-        ├─> 若被删的是 activeGroupId → activeGroupId 置 null
         └─> 写入 storage
 ```
 
@@ -598,7 +604,7 @@ export default defineConfig({
 2. **窗口指纹匹配是启发式的**：用户关掉窗口、用同样 URL 集合开了个新窗口时，可能误关联。可接受，因为损失只是"两个窗口共用了同一份分组数据"，不会丢数据。
 3. **Service Worker 短期回收**带来的事件错过：所有事件监听器顶层注册可以缓解，但 SW 完全冷启动时第一个 onCreated 可能在事件分发前就发生——MV3 平台限制，无完美解。
 4. **分组数据量上限**：`chrome.storage.local` 默认 10MB。若用户分组爆炸，应在 v2 加清理 UI 或 `unlimitedStorage` 权限。
-5. **pendingOpens 同 URL 撞车**：用户连续点同一 URL 的两个 saved 标签时，`pendingOpens` 用 URL 作 key 会相互覆盖，导致第二次点击在 activeGroup 里多出一个 TabRef，原 saved 状态没变化。v1 可接受；v2 改为给 URL 加查询参数指纹或换 Map 结构。
+5. **pendingOpens 同 URL 撞车**：用户连续点同一 URL 的两个 saved 标签时，`pendingOpens` 用 URL 作 key 会相互覆盖，导致第二次点击 relink 失败、在 untrackedTabs 里多出一个 TabRef，原 saved 状态没变化。v1 可接受；v2 改为给 URL 加查询参数指纹或换 Map 结构。
 
 ## 13. 后续可能的演进（不在 v1 范围）
 

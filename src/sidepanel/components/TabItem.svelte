@@ -32,6 +32,9 @@
   const isActive = $derived(
     tab.chromeTabId !== null && tab.chromeTabId === activeTabStore.chromeTabId,
   );
+  const isPinned = $derived(tab.pinned === true);
+  /** Pin only has meaning inside a group; untrackedTabs entries can't be pinned. */
+  const canPin = $derived(groupId !== null);
   const showFavicon = $derived(settingsStore.value.showFavicons);
   const safeFavicon = $derived(
     tab.favIconUrl && isSafeFaviconUrl(tab.favIconUrl) ? tab.favIconUrl : null,
@@ -95,6 +98,18 @@
     }
   }
 
+  async function togglePin(e: MouseEvent) {
+    e.stopPropagation();
+    if (groupId === null) return; // shouldn't happen — pin hidden in untracked
+    await sendMessage({
+      type: 'setTabPinned',
+      windowId: win.id,
+      tabRefId: tab.id,
+      groupId,
+      pinned: !isPinned,
+    });
+  }
+
   function onKeydown(e: KeyboardEvent) {
     // Only handle keys on the row itself; if a child button (e.g. remove)
     // is focused and bubbles up, ignore — that button has its own handler.
@@ -112,6 +127,7 @@
   class:live={isLive}
   class:saved={!isLive}
   class:active={isActive}
+  class:pinned={isPinned}
   class:dragging={isDragging}
   class:edge-top={hoverEdge === 'top'}
   class:edge-bottom={hoverEdge === 'bottom'}
@@ -135,6 +151,34 @@
   {/if}
 
   <span class="title">{tab.title || tab.url}</span>
+
+  {#if canPin}
+    <button
+      class="pin"
+      onclick={togglePin}
+      title={isPinned ? '取消固定（关闭时一并删除）' : '固定（关闭后保留为 saved）'}
+      aria-label={isPinned ? '取消固定' : '固定'}
+      aria-pressed={isPinned}
+    >
+      <!-- thumbtack: filled when pinned, outline when not -->
+      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+        {#if isPinned}
+          <path
+            fill="currentColor"
+            d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"
+          />
+        {:else}
+          <path
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-linejoin="round"
+            d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"
+          />
+        {/if}
+      </svg>
+    </button>
+  {/if}
 
   <button
     class="remove"
@@ -238,6 +282,7 @@
     font-size: 13.5px;
   }
 
+  .pin,
   .remove {
     flex: 0 0 16px;
     width: 16px;
@@ -250,12 +295,25 @@
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 80ms;
+    transition: opacity 80ms, background 80ms, color 80ms;
   }
 
+  /* Pinned tabs always show the pin icon so users see the state at rest. */
+  .tab.pinned .pin {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  .tab:hover .pin,
+  .tab:focus-within .pin,
   .tab:hover .remove,
   .tab:focus-within .remove {
     opacity: 1;
+  }
+
+  .pin:hover {
+    background: var(--bg-active);
+    color: var(--accent);
   }
 
   .remove:hover {

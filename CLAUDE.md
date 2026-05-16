@@ -50,7 +50,8 @@ Not yet installed. When scaffolding:
 ## Conventions specific to this design
 
 - **Order is encoded as array position**, not an `order: number` field. When reordering, mutate the array.
-- **`activeGroupId` may be `null`.** New tabs created when there's no active group go into `WindowState.untrackedTabs`, not into a group. Code that assumes an active group exists will crash on first install.
+- **No "active group" concept.** Every newly-created Chrome tab goes into `WindowState.untrackedTabs`. Users drag tabs into groups manually.
+- **Close behavior depends on `TabRef.pinned`.** Inside a group: pinned → become `saved` (chromeTabId = null); unpinned → removed from `group.tabs` entirely. In `untrackedTabs`: always removed (no pin concept).
 - **Deleting a group does not close its tabs.** `live` tabs move to `untrackedTabs`; `saved` tabs are discarded. The spec explains why (§6.9).
 - **Tab navigation updates `TabRef.url`** — a TabRef represents "that tab" persistently, following it through navigation.
 

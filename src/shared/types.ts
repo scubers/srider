@@ -22,6 +22,13 @@ export interface TabRef {
   favIconUrl?: string;
   /** Live mapping to Chrome's ephemeral tabId. null = saved (closed). */
   chromeTabId: number | null;
+  /**
+   * If true, the TabRef is retained as `saved` when its Chrome tab is closed.
+   * If false/undefined, closing the tab removes the TabRef from the group
+   * entirely. Pin only has meaning inside groups; entries in untrackedTabs
+   * are always live-only.
+   */
+  pinned?: boolean;
   addedAt: number;
 }
 
@@ -39,9 +46,10 @@ export interface WindowState {
   /** Current Chrome windowId. Changes across restart. null when window is closed. */
   chromeWindowId: number | null;
   groups: Group[];
-  /** null → new tabs go into untrackedTabs, not into any group. */
-  activeGroupId: GroupId | null;
-  /** Live tabs that don't belong to any group. */
+  /**
+   * Live tabs that don't belong to any group. All newly-created Chrome tabs
+   * land here; the user drags them into a group manually.
+   */
   untrackedTabs: TabRef[];
   /** URL set captured at last update, used for matching restored windows. */
   fingerprint: string[];
@@ -79,7 +87,6 @@ export function emptyWindowState(id: WindowUUID, chromeWindowId: number | null):
     id,
     chromeWindowId,
     groups: [],
-    activeGroupId: null,
     untrackedTabs: [],
     fingerprint: [],
     fingerprintUpdatedAt: Date.now(),

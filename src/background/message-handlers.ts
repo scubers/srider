@@ -60,8 +60,6 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await renameGroup(msg);
       case 'deleteGroup':
         return await deleteGroup(msg);
-      case 'setActiveGroup':
-        return await setActiveGroup(msg);
       case 'toggleGroupCollapsed':
         return await toggleGroupCollapsed(msg);
       case 'reorderGroups':
@@ -70,6 +68,8 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await moveTab(msg);
       case 'removeTab':
         return await removeTab(msg);
+      case 'setTabPinned':
+        return await setTabPinned(msg);
       case 'activateLiveTab':
         return await activateLiveTab(msg);
       case 'openSavedTab':
@@ -104,7 +104,6 @@ async function createGroup(msg: Extract<Message, { type: 'createGroup' }>): Prom
       createdAt: Date.now(),
     };
     window.groups.push(group);
-    if (window.activeGroupId === null) window.activeGroupId = group.id;
   });
   return { ok: true };
 }
@@ -136,23 +135,21 @@ async function deleteGroup(msg: Extract<Message, { type: 'deleteGroup' }>): Prom
         window.untrackedTabs.push(tab);
       }
     }
-    if (window.activeGroupId === msg.groupId) {
-      window.activeGroupId = null;
-    }
   });
   return { ok: true };
 }
 
-async function setActiveGroup(
-  msg: Extract<Message, { type: 'setActiveGroup' }>,
+async function setTabPinned(
+  msg: Extract<Message, { type: 'setTabPinned' }>,
 ): Promise<MessageResponse> {
   await withAppData((data) => {
     const window = getWindow(data, msg.windowId);
     if (!window) throw new Error(`window ${msg.windowId} not found`);
-    if (msg.groupId !== null && !getGroup(window, msg.groupId)) {
-      throw new Error(`group ${msg.groupId} not found`);
-    }
-    window.activeGroupId = msg.groupId;
+    const group = getGroup(window, msg.groupId);
+    if (!group) throw new Error(`group ${msg.groupId} not found`);
+    const tab = group.tabs.find((t) => t.id === msg.tabRefId);
+    if (!tab) throw new Error(`tab ${msg.tabRefId} not found in group ${msg.groupId}`);
+    tab.pinned = msg.pinned;
   });
   return { ok: true };
 }

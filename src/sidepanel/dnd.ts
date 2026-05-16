@@ -210,8 +210,10 @@ function installExternalDropHandlers(getWindow: () => WindowState | null): () =>
     if (!url) return;
 
     // Determine target group from the closest ancestor with [data-group-id].
+    // If the drop wasn't on a specific group, ignore — there is no "default"
+    // group anymore; the user drags onto a group explicitly.
     const targetEl = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-group-id]');
-    const groupId = targetEl?.dataset.groupId ?? window.activeGroupId;
+    const groupId = targetEl?.dataset.groupId;
     if (!groupId) return;
 
     // chromeTabId resolution happens in the SW where chrome.tabs is available.

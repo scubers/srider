@@ -11,7 +11,6 @@ export type Message =
   | { type: 'createGroup'; windowId: WindowUUID; name: string }
   | { type: 'renameGroup'; windowId: WindowUUID; groupId: GroupId; name: string }
   | { type: 'deleteGroup'; windowId: WindowUUID; groupId: GroupId }
-  | { type: 'setActiveGroup'; windowId: WindowUUID; groupId: GroupId | null }
   | { type: 'toggleGroupCollapsed'; windowId: WindowUUID; groupId: GroupId; collapsed: boolean }
   | { type: 'reorderGroups'; windowId: WindowUUID; orderedIds: GroupId[] }
   | {
@@ -27,6 +26,13 @@ export type Message =
       windowId: WindowUUID;
       tabRefId: TabRefId;
       fromGroupId: GroupId | null; // null = untrackedTabs
+    }
+  | {
+      type: 'setTabPinned';
+      windowId: WindowUUID;
+      tabRefId: TabRefId;
+      groupId: GroupId; // pin only applies inside a group
+      pinned: boolean;
     }
   | {
       type: 'activateLiveTab';
