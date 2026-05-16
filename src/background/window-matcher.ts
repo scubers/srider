@@ -90,9 +90,12 @@ export function matchWindows(appData: AppData, snapshots: ChromeWindowSnapshot[]
     } else {
       const id = uuid();
       const state = emptyWindowState(id, snapshot.chromeWindowId);
-      // No existing groups; everything goes to untrackedTabs.
-      state.untrackedTabs = snapshot.tabs.map(snapshotToTabRef);
-      state.fingerprint = urls;
+      // No existing groups; every loaded Chrome tab goes to untrackedTabs.
+      // Skip tabs whose URL hasn't settled yet — onUpdated will catch them.
+      state.untrackedTabs = snapshot.tabs
+        .filter((t) => t.url)
+        .map(snapshotToTabRef);
+      state.fingerprint = urls.filter((u) => u);
       state.fingerprintUpdatedAt = Date.now();
       appData.windows[id] = state;
       newWindowIds.push(id);
@@ -123,6 +126,11 @@ function bindWindowState(state: WindowState, snapshot: ChromeWindowSnapshot): vo
   // Pass 1: assign chromeTabId for TabRefs in groups (already-loaded order).
   for (const group of state.groups) {
     for (const tabRef of group.tabs) {
+      if (!tabRef.url) {
+        // Group TabRefs with no URL are saved-style placeholders; can't match.
+        tabRef.chromeTabId = null;
+        continue;
+      }
       const candidates = tabsByUrl.get(tabRef.url);
       if (candidates && candidates.length > 0) {
         const tab = candidates.shift()!;
@@ -137,6 +145,12 @@ function bindWindowState(state: WindowState, snapshot: ChromeWindowSnapshot): vo
 
   // Pass 2: existing untrackedTabs: same matching logic.
   for (const tabRef of state.untrackedTabs) {
+    if (!tabRef.url) {
+      // Empty-URL entries are unmatchable garbage (e.g. created during a
+      // brief race when a tab fired onCreated before its URL settled).
+      tabRef.chromeTabId = null;
+      continue;
+    }
     const candidates = tabsByUrl.get(tabRef.url);
     if (candidates && candidates.length > 0) {
       const tab = candidates.shift()!;
@@ -152,12 +166,24 @@ function bindWindowState(state: WindowState, snapshot: ChromeWindowSnapshot): vo
   // dropped to avoid accumulation; "real" saved tabs live in groups).
   state.untrackedTabs = state.untrackedTabs.filter((t) => t.chromeTabId !== null);
 
-  // Pass 3: any leftover Chrome tabs are new — add to untrackedTabs.
+  // Pass 3: any leftover Chrome tabs are new — add to untrackedTabs (skip
+  // loading tabs whose URL hasn't settled; onUpdated will pick them up).
   for (const tabs of tabsByUrl.values()) {
     for (const tab of tabs) {
+      if (!tab.url) continue;
       state.untrackedTabs.push(snapshotToTabRef(tab));
     }
   }
+
+  // Final dedupe by chromeTabId in case a previously-broken state stored
+  // duplicates from before this fix.
+  const seenChromeTabIds = new Set<number>();
+  state.untrackedTabs = state.untrackedTabs.filter((t) => {
+    if (t.chromeTabId === null) return false;
+    if (seenChromeTabIds.has(t.chromeTabId)) return false;
+    seenChromeTabIds.add(t.chromeTabId);
+    return true;
+  });
 
   // Refresh fingerprint.
   state.fingerprint = snapshot.tabs.map((t) => t.url);

@@ -82,14 +82,23 @@ function findTabByChromeId(
   chromeTabId: number,
 ): TabLocation | null {
   for (const state of Object.values(data.windows)) {
-    for (const group of state.groups) {
-      for (const tab of group.tabs) {
-        if (tab.chromeTabId === chromeTabId) return { state, group, tabRef: tab };
-      }
+    const inState = findTabByChromeIdInState(state, chromeTabId);
+    if (inState) return { state, group: inState.group, tabRef: inState.tabRef };
+  }
+  return null;
+}
+
+function findTabByChromeIdInState(
+  state: WindowState,
+  chromeTabId: number,
+): { group: { id: string; tabs: TabRef[] } | null; tabRef: TabRef } | null {
+  for (const group of state.groups) {
+    for (const tab of group.tabs) {
+      if (tab.chromeTabId === chromeTabId) return { group, tabRef: tab };
     }
-    for (const tab of state.untrackedTabs) {
-      if (tab.chromeTabId === chromeTabId) return { state, group: null, tabRef: tab };
-    }
+  }
+  for (const tab of state.untrackedTabs) {
+    if (tab.chromeTabId === chromeTabId) return { group: null, tabRef: tab };
   }
   return null;
 }
@@ -97,9 +106,13 @@ function findTabByChromeId(
 function updateFingerprint(state: WindowState): void {
   const urls: string[] = [];
   for (const group of state.groups) {
-    for (const t of group.tabs) if (t.chromeTabId !== null) urls.push(t.url);
+    for (const t of group.tabs) {
+      if (t.chromeTabId !== null && t.url) urls.push(t.url);
+    }
   }
-  for (const t of state.untrackedTabs) if (t.chromeTabId !== null) urls.push(t.url);
+  for (const t of state.untrackedTabs) {
+    if (t.chromeTabId !== null && t.url) urls.push(t.url);
+  }
   state.fingerprint = urls;
   state.fingerprintUpdatedAt = Date.now();
 }
@@ -204,6 +217,17 @@ export async function handleTabCreated(
         }
       }
       // Fall through if TabRef no longer exists; treat as a brand-new tab.
+    }
+
+    // Recovery (matchWindows) may have pre-populated a TabRef for this same
+    // Chrome tab when the SW was waking up. Claim it instead of duplicating.
+    const existing = findTabByChromeIdInState(state, chromeTabId);
+    if (existing) {
+      if (url) existing.tabRef.url = url;
+      if (title) existing.tabRef.title = title;
+      if (tab.favIconUrl) existing.tabRef.favIconUrl = tab.favIconUrl;
+      updateFingerprint(state);
+      return;
     }
 
     const newRef: TabRef = {

@@ -141,6 +141,54 @@ describe('matchWindows', () => {
     expect(state.groups[0].tabs[1].chromeTabId).toBe(200);
   });
 
+  it('drops empty-URL TabRefs from untrackedTabs during rebind (cleanup of stale phantoms)', () => {
+    const data = emptyAppData();
+    const id = uuid();
+    const state = emptyWindowState(id, null);
+    state.fingerprint = ['https://real'];
+    state.untrackedTabs = [
+      // legitimate
+      { id: 't-real', url: 'https://real', title: 'Real', chromeTabId: 1, addedAt: 0 },
+      // phantom: empty URL from a prior race
+      { id: 't-empty', url: '', title: '', chromeTabId: 1, addedAt: 0 },
+    ];
+    data.windows[id] = state;
+
+    matchWindows(data, [
+      {
+        chromeWindowId: 7,
+        tabs: [{ chromeTabId: 100, url: 'https://real', title: 'Real' }],
+      },
+    ]);
+
+    expect(state.untrackedTabs).toHaveLength(1);
+    expect(state.untrackedTabs[0].id).toBe('t-real');
+    expect(state.untrackedTabs[0].chromeTabId).toBe(100);
+  });
+
+  it('dedupes untrackedTabs by chromeTabId after rebind', () => {
+    const data = emptyAppData();
+    const id = uuid();
+    const state = emptyWindowState(id, null);
+    state.fingerprint = ['https://x'];
+    // Two entries both claiming chromeTabId 5 (broken state from before fix).
+    state.untrackedTabs = [
+      { id: 'a', url: 'https://x', title: 'X', chromeTabId: 5, addedAt: 0 },
+      { id: 'b', url: 'https://x', title: 'X dup', chromeTabId: 5, addedAt: 0 },
+    ];
+    data.windows[id] = state;
+
+    matchWindows(data, [
+      {
+        chromeWindowId: 1,
+        tabs: [{ chromeTabId: 50, url: 'https://x', title: 'X live' }],
+      },
+    ]);
+
+    expect(state.untrackedTabs).toHaveLength(1);
+    expect(state.untrackedTabs[0].chromeTabId).toBe(50);
+  });
+
   it('marks unmatched stored TabRefs as saved (chromeTabId=null)', () => {
     const data = emptyAppData();
     const id = uuid();
