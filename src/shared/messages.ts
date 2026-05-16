@@ -67,6 +67,26 @@ export type Message =
        */
       type: 'autoGroupByDomain';
       windowId: WindowUUID;
+    }
+  | {
+      /**
+       * Close every live Chrome tab whose TabRef sits in the given container.
+       * `groupId: null` targets WindowState.untrackedTabs. The SW issues
+       * chrome.tabs.remove(); onRemoved → handleTabRemoved then applies the
+       * usual pin policy (pinned → saved, unpinned → dropped).
+       */
+      type: 'closeAllInGroup';
+      windowId: WindowUUID;
+      groupId: GroupId | null;
+    }
+  | {
+      /**
+       * Open a new Chrome tab (default new-tab page) and route it directly
+       * into the given group instead of WindowState.untrackedTabs.
+       */
+      type: 'newTabInGroup';
+      windowId: WindowUUID;
+      groupId: GroupId;
     };
 
 export type MessageResponse = { ok: true } | { ok: false; error: string };

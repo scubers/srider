@@ -31,8 +31,8 @@
   let menuPopupEl: HTMLDivElement | undefined = $state();
   let menuPos = $state<{ left: number; top: number } | null>(null);
 
-  const APPROX_MENU_WIDTH = 144;
-  const APPROX_MENU_HEIGHT = 76;
+  const APPROX_MENU_WIDTH = 160;
+  const APPROX_MENU_HEIGHT = 108;
 
   function computeMenuPos(): void {
     if (!menuBtnEl) return;
@@ -107,6 +107,21 @@
     await sendMessage({ type: 'deleteGroup', windowId: win.id, groupId: group.id });
   }
 
+  /** Count of live (open) Chrome tabs in this group, used by close-all UX. */
+  const liveCount = $derived(group.tabs.filter((t) => t.chromeTabId !== null).length);
+
+  async function closeAll() {
+    menuOpen = false;
+    if (liveCount === 0) return;
+    if (!confirm(`关闭分组「${group.name}」里的 ${liveCount} 个已打开标签？\n（pin 过的会保留为 saved；未 pin 的会从分组里删除）`)) return;
+    await sendMessage({ type: 'closeAllInGroup', windowId: win.id, groupId: group.id });
+  }
+
+  async function addNewTab(e: MouseEvent) {
+    e.stopPropagation();
+    await sendMessage({ type: 'newTabInGroup', windowId: win.id, groupId: group.id });
+  }
+
   /** Display host for auto-domain favicon fallback letter. */
   const iconHost = $derived(group.autoDomain ?? group.name);
 </script>
@@ -149,6 +164,12 @@
     </svg>
   </span>
 
+  <button class="add-btn" onclick={addNewTab} title="在该分组内新建标签页" aria-label="在该分组内新建标签页">
+    <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+      <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6 2.2v7.6M2.2 6h7.6"/>
+    </svg>
+  </button>
+
   <div class="menu-wrap" bind:this={menuEl}>
     <button bind:this={menuBtnEl} class="menu-btn" onclick={toggleMenu} aria-label="更多操作">⋯</button>
   </div>
@@ -163,6 +184,9 @@
     style:top="{menuPos.top}px"
   >
     <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>重命名</button>
+    <button role="menuitem" disabled={liveCount === 0} onclick={closeAll}>
+      关闭所有 <span class="count-hint">({liveCount})</span>
+    </button>
     <button role="menuitem" class="danger" onclick={deleteGroup}>删除分组</button>
   </div>
 {/if}
@@ -259,6 +283,7 @@
     position: relative;
   }
 
+  .add-btn,
   .menu-btn {
     flex: 0 0 22px;
     width: 22px;
@@ -271,6 +296,7 @@
     font-size: 15px;
   }
 
+  .add-btn:hover,
   .menu-btn:hover {
     background: var(--surface);
     color: var(--text);
@@ -309,5 +335,11 @@
 
   .menu button.danger {
     color: var(--danger);
+  }
+
+  .count-hint {
+    color: var(--text-faint);
+    font-size: 11px;
+    margin-left: 2px;
   }
 </style>

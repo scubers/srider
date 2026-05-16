@@ -81,6 +81,10 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await addUrlToGroup(msg);
       case 'autoGroupByDomain':
         return await autoGroupByDomain(msg);
+      case 'closeAllInGroup':
+        return await closeAllInGroup(msg);
+      case 'newTabInGroup':
+        return await newTabInGroup(msg);
       default: {
         // Exhaustiveness check: adding a new Message variant must add a case here.
         const exhaustive: never = msg;
@@ -397,6 +401,83 @@ async function autoGroupByDomain(
       // Append (preserving relative order from untrackedTabs).
       for (const tab of tabs) group.tabs.push(tab);
     }
+  });
+  return { ok: true };
+}
+
+async function closeAllInGroup(
+  msg: Extract<Message, { type: 'closeAllInGroup' }>,
+): Promise<MessageResponse> {
+  const data = await getAppData();
+  const window = getWindow(data, msg.windowId);
+  if (!window) return { ok: false, error: 'window not found' };
+
+  let container: TabRef[];
+  if (msg.groupId === null) {
+    container = window.untrackedTabs;
+  } else {
+    const group = getGroup(window, msg.groupId);
+    if (!group) return { ok: false, error: 'group not found' };
+    container = group.tabs;
+  }
+
+  const liveTabIds = container
+    .filter((t): t is TabRef & { chromeTabId: number } => t.chromeTabId !== null)
+    .map((t) => t.chromeTabId);
+
+  if (liveTabIds.length === 0) return { ok: true };
+
+  // chrome.tabs.remove triggers onRemoved → handleTabRemoved, which applies
+  // pin policy: pinned items become saved, unpinned items drop from the group.
+  // Untracked items always drop.
+  await chrome.tabs.remove(liveTabIds);
+  return { ok: true };
+}
+
+async function newTabInGroup(
+  msg: Extract<Message, { type: 'newTabInGroup' }>,
+): Promise<MessageResponse> {
+  // Look up the host window for proper window targeting.
+  const data = await getAppData();
+  const win = getWindow(data, msg.windowId);
+  if (!win) return { ok: false, error: 'window not found' };
+  if (!getGroup(win, msg.groupId)) return { ok: false, error: 'group not found' };
+
+  const created = await chrome.tabs.create({
+    windowId: win.chromeWindowId ?? undefined,
+    active: true,
+  });
+  const chromeTabId = created.id;
+  if (chromeTabId === undefined) return { ok: false, error: 'chrome.tabs.create returned no id' };
+
+  // handleTabCreated runs via chrome.tabs.onCreated and lands the new tab in
+  // untrackedTabs by default. Our move below queues *after* it on the shared
+  // write chain, so by the time we run the TabRef exists and can be relocated.
+  await withAppData((data) => {
+    const w = getWindow(data, msg.windowId);
+    if (!w) return;
+    const target = getGroup(w, msg.groupId);
+    if (!target) return;
+
+    // Locate the just-created TabRef anywhere in this window.
+    for (const g of w.groups) {
+      const idx = g.tabs.findIndex((t) => t.chromeTabId === chromeTabId);
+      if (idx !== -1) {
+        if (g.id === target.id) return; // already where we want it
+        const [moving] = g.tabs.splice(idx, 1);
+        target.tabs.push(moving);
+        cleanupEmptyAutoGroups(w);
+        return;
+      }
+    }
+    const untrackedIdx = w.untrackedTabs.findIndex((t) => t.chromeTabId === chromeTabId);
+    if (untrackedIdx !== -1) {
+      const [moving] = w.untrackedTabs.splice(untrackedIdx, 1);
+      target.tabs.push(moving);
+      return;
+    }
+    // TabRef not yet materialised; the next onCreated handler invocation
+    // will place it in untrackedTabs and the user can drag it manually.
   });
   return { ok: true };
 }

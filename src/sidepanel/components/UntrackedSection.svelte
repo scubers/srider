@@ -16,6 +16,9 @@
     activeTabStore.chromeTabId !== null &&
       win.untrackedTabs.some((t) => t.chromeTabId === activeTabStore.chromeTabId),
   );
+  const liveCount = $derived(
+    win.untrackedTabs.filter((t) => t.chromeTabId !== null).length,
+  );
 
   onMount(() => {
     if (!rootEl) return;
@@ -41,6 +44,66 @@
       busy = false;
     }
   }
+
+  // ---- Menu (mirrors GroupHeader's position:fixed popup pattern) ----
+
+  let menuOpen = $state(false);
+  let menuEl: HTMLDivElement | undefined = $state();
+  let menuBtnEl: HTMLButtonElement | undefined = $state();
+  let menuPopupEl: HTMLDivElement | undefined = $state();
+  let menuPos = $state<{ left: number; top: number } | null>(null);
+
+  const MENU_W = 160;
+  const MENU_H = 44;
+
+  function computeMenuPos() {
+    if (!menuBtnEl) return;
+    const rect = menuBtnEl.getBoundingClientRect();
+    let left = rect.right - MENU_W;
+    if (left < 4) left = 4;
+    if (left + MENU_W > window.innerWidth - 4) left = window.innerWidth - MENU_W - 4;
+    let top = rect.bottom + 4;
+    if (top + MENU_H > window.innerHeight - 4) top = rect.top - MENU_H - 4;
+    if (top < 4) top = 4;
+    menuPos = { left, top };
+  }
+
+  function toggleMenu() {
+    if (menuOpen) {
+      menuOpen = false;
+      return;
+    }
+    computeMenuPos();
+    menuOpen = true;
+  }
+
+  $effect(() => {
+    if (!menuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (menuEl?.contains(t)) return;
+      if (menuPopupEl?.contains(t)) return;
+      menuOpen = false;
+    };
+    document.addEventListener('mousedown', onDocClick);
+    const onReposition = () => {
+      menuOpen = false;
+    };
+    window.addEventListener('scroll', onReposition, true);
+    window.addEventListener('resize', onReposition);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      window.removeEventListener('scroll', onReposition, true);
+      window.removeEventListener('resize', onReposition);
+    };
+  });
+
+  async function closeAll() {
+    menuOpen = false;
+    if (liveCount === 0) return;
+    if (!confirm(`关闭"未分类"里的 ${liveCount} 个已打开标签？`)) return;
+    await sendMessage({ type: 'closeAllInGroup', windowId: win.id, groupId: null });
+  }
 </script>
 
 <section
@@ -63,6 +126,9 @@
     >
       按域名分组
     </button>
+    <div class="menu-wrap" bind:this={menuEl}>
+      <button bind:this={menuBtnEl} class="menu-btn" onclick={toggleMenu} aria-label="更多操作">⋯</button>
+    </div>
   </div>
   <ul role="list">
     {#each win.untrackedTabs as tab (tab.id)}
@@ -72,6 +138,20 @@
     {/each}
   </ul>
 </section>
+
+{#if menuOpen && menuPos}
+  <div
+    bind:this={menuPopupEl}
+    class="menu"
+    role="menu"
+    style:left="{menuPos.left}px"
+    style:top="{menuPos.top}px"
+  >
+    <button role="menuitem" disabled={liveCount === 0} onclick={closeAll}>
+      关闭所有 <span class="count-hint">({liveCount})</span>
+    </button>
+  </div>
+{/if}
 
 <style>
   .card {
@@ -84,13 +164,11 @@
     transition: background 120ms, border-color 120ms;
   }
 
-  /* Card-level highlight when the focused Chrome tab is currently untracked. */
   .card.has-active {
     background: linear-gradient(180deg, var(--accent-bg-soft), var(--bg-raised));
     border-color: var(--accent-border);
   }
 
-  /* Drag-over wins over has-active. */
   .card.over {
     border-color: var(--accent);
     background: var(--accent-bg-soft);
@@ -157,6 +235,64 @@
     color: var(--text-faint);
     cursor: not-allowed;
     opacity: 0.6;
+  }
+
+  .menu-wrap {
+    position: relative;
+  }
+
+  .menu-btn {
+    flex: 0 0 22px;
+    width: 22px;
+    height: 22px;
+    color: var(--text-mute);
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+
+  .menu-btn:hover {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .menu {
+    position: fixed;
+    min-width: 140px;
+    max-width: 200px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    padding: 4px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .menu button {
+    padding: 6px 10px;
+    text-align: left;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .menu button:hover:not(:disabled) {
+    background: var(--surface-hover);
+  }
+
+  .menu button:disabled {
+    color: var(--text-faint);
+    cursor: default;
+  }
+
+  .count-hint {
+    color: var(--text-faint);
+    font-size: 11px;
+    margin-left: 2px;
   }
 
   ul {
