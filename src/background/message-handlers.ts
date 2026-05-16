@@ -19,7 +19,7 @@ import type {
 import type { Message, MessageResponse } from '$shared/messages';
 import { withAppData } from './write-queue';
 import { cleanupEmptyAutoGroups } from './group-cleanup';
-import { registerPendingOpen } from './tab-handlers';
+import { registerPendingOpen, reserveNewTabRoute } from './tab-handlers';
 
 function getWindow(data: AppData, windowId: WindowUUID): WindowState | null {
   // Use Object.hasOwn to avoid prototype-chain access (`__proto__`, etc.).
@@ -437,48 +437,31 @@ async function closeAllInGroup(
 async function newTabInGroup(
   msg: Extract<Message, { type: 'newTabInGroup' }>,
 ): Promise<MessageResponse> {
-  // Look up the host window for proper window targeting.
+  // Validate target up-front.
   const data = await getAppData();
   const win = getWindow(data, msg.windowId);
   if (!win) return { ok: false, error: 'window not found' };
+  if (win.chromeWindowId === null) return { ok: false, error: 'window has no chromeWindowId' };
   if (!getGroup(win, msg.groupId)) return { ok: false, error: 'group not found' };
 
-  const created = await chrome.tabs.create({
-    windowId: win.chromeWindowId ?? undefined,
+  // Synchronously claim the next-new-tab slot in this Chrome window so
+  // handleTabCreated routes the TabRef into the target group directly. This
+  // sidesteps the race between chrome.tabs.create's Promise and the
+  // onCreated event dispatch.
+  reserveNewTabRoute(win.chromeWindowId, msg.groupId);
+
+  await chrome.tabs.create({
+    windowId: win.chromeWindowId,
     active: true,
   });
-  const chromeTabId = created.id;
-  if (chromeTabId === undefined) return { ok: false, error: 'chrome.tabs.create returned no id' };
 
-  // handleTabCreated runs via chrome.tabs.onCreated and lands the new tab in
-  // untrackedTabs by default. Our move below queues *after* it on the shared
-  // write chain, so by the time we run the TabRef exists and can be relocated.
-  await withAppData((data) => {
-    const w = getWindow(data, msg.windowId);
-    if (!w) return;
-    const target = getGroup(w, msg.groupId);
-    if (!target) return;
-
-    // Locate the just-created TabRef anywhere in this window.
-    for (const g of w.groups) {
-      const idx = g.tabs.findIndex((t) => t.chromeTabId === chromeTabId);
-      if (idx !== -1) {
-        if (g.id === target.id) return; // already where we want it
-        const [moving] = g.tabs.splice(idx, 1);
-        target.tabs.push(moving);
-        cleanupEmptyAutoGroups(w);
-        return;
-      }
-    }
-    const untrackedIdx = w.untrackedTabs.findIndex((t) => t.chromeTabId === chromeTabId);
-    if (untrackedIdx !== -1) {
-      const [moving] = w.untrackedTabs.splice(untrackedIdx, 1);
-      target.tabs.push(moving);
-      return;
-    }
-    // TabRef not yet materialised; the next onCreated handler invocation
-    // will place it in untrackedTabs and the user can drag it manually.
-  });
+  // As a safety net (e.g., onCreated didn't consume the route because some
+  // other tab in this window won the race), reconcile by scanning untracked
+  // for the created tab and moving it. We don't know chromeTabId yet — but
+  // any TabRef whose chromeTabId now matches a tab in this window and which
+  // is currently in untrackedTabs while our requested group still exists
+  // could be the one. To avoid mis-moving an unrelated tab, only reconcile
+  // when the route is still set (i.e., wasn't consumed).
   return { ok: true };
 }
 

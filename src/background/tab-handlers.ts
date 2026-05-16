@@ -28,6 +28,29 @@ const PENDING_OPEN_MAX_ENTRIES = 100;
 const NEW_WINDOW_SETTLE_MS = 500;
 const UNKNOWN_WINDOW_RETRY_MS = 600;
 const MAX_UNKNOWN_WINDOW_RETRIES = 3;
+const PENDING_ROUTE_TTL_MS = 1_000;
+
+// ---------- Pending "next new tab in this window goes to group X" route ----------
+
+/**
+ * Set synchronously by message-handlers' newTabInGroup BEFORE it calls
+ * chrome.tabs.create, so handleTabCreated can route the resulting TabRef
+ * straight into the target group instead of the default untrackedTabs.
+ *
+ * In-memory (not session storage): the SW lifetime is the only window where
+ * this matters. Auto-expires after PENDING_ROUTE_TTL_MS to prevent a stale
+ * route from catching an unrelated user-initiated tab.
+ */
+const pendingNewTabRoute = new Map<number /* chromeWindowId */, string /* groupId */>();
+
+export function reserveNewTabRoute(chromeWindowId: number, groupId: string): void {
+  pendingNewTabRoute.set(chromeWindowId, groupId);
+  setTimeout(() => {
+    if (pendingNewTabRoute.get(chromeWindowId) === groupId) {
+      pendingNewTabRoute.delete(chromeWindowId);
+    }
+  }, PENDING_ROUTE_TTL_MS);
+}
 
 // ---------- Event buffer for new windows ----------
 
@@ -236,8 +259,6 @@ export async function handleTabCreated(
       return;
     }
 
-    // New tabs always land in untrackedTabs. Users drag them into groups
-    // manually; there is no "active group" auto-routing.
     const newRef: TabRef = {
       id: uuid(),
       url,
@@ -246,6 +267,24 @@ export async function handleTabCreated(
       chromeTabId,
       addedAt: Date.now(),
     };
+
+    // If newTabInGroup reserved a route for this window, place the TabRef
+    // directly into the target group. Single-use: consume on first match.
+    const routedGroupId = pendingNewTabRoute.get(chromeWindowId);
+    if (routedGroupId) {
+      const target = state.groups.find((g) => g.id === routedGroupId);
+      if (target) {
+        pendingNewTabRoute.delete(chromeWindowId);
+        target.tabs.push(newRef);
+        updateFingerprint(state);
+        return;
+      }
+      // Group no longer exists (deleted in the brief window): fall through.
+      pendingNewTabRoute.delete(chromeWindowId);
+    }
+
+    // Default: new tabs land in untrackedTabs; users drag them into groups
+    // manually.
     state.untrackedTabs.push(newRef);
     updateFingerprint(state);
   });
