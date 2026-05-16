@@ -34,6 +34,16 @@
   async function setClickBehavior(savedTabClickBehavior: SavedTabClickBehavior) {
     await settingsStore.update({ savedTabClickBehavior });
   }
+
+  // Chrome 限制：以下两项位于浏览器的设置页里，扩展无法在自身 UI 中切换，
+  // 只能打开对应的 chrome:// 设置页让用户操作。
+  function openShortcutSettings() {
+    void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  }
+
+  function openAppearanceSettings() {
+    void chrome.tabs.create({ url: 'chrome://settings/appearance' });
+  }
 </script>
 
 <main>
@@ -112,6 +122,20 @@
         {/each}
       </div>
     </section>
+
+    <section class="field">
+      <div class="label">浏览器设置入口</div>
+      <div class="control link-col">
+        <button class="link-btn" onclick={openShortcutSettings}>
+          <span class="link-title">自定义快捷键</span>
+          <span class="link-desc">默认 Cmd/Ctrl+B 切换侧边栏，可在 chrome://extensions/shortcuts 改</span>
+        </button>
+        <button class="link-btn" onclick={openAppearanceSettings}>
+          <span class="link-title">侧边栏左/右位置</span>
+          <span class="link-desc">在 chrome://settings/appearance 的"侧边栏"区切换</span>
+        </button>
+      </div>
+    </section>
   {/if}
 </main>
 
@@ -168,5 +192,43 @@
   input[type='radio'],
   input[type='checkbox'] {
     accent-color: var(--accent);
+  }
+
+  .link-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .link-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: left;
+    transition: background 80ms, border-color 80ms;
+  }
+
+  .link-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+  }
+
+  .link-title {
+    font-weight: 500;
+    color: var(--fg);
+  }
+
+  .link-title::after {
+    content: ' →';
+    color: var(--accent);
+  }
+
+  .link-desc {
+    font-size: 12px;
+    color: var(--fg-muted);
   }
 </style>

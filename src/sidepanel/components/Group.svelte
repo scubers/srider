@@ -135,8 +135,8 @@
   }
 
   .empty {
-    padding: 5px 22px;
-    font-size: 11.5px;
+    padding: 4px 16px;
+    font-size: 12px;
     color: var(--fg-faint);
     font-style: italic;
   }

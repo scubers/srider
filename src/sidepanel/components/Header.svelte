@@ -28,7 +28,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 8px;
+    gap: 6px;
+    padding: 4px 6px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-elevated);
     position: sticky;
@@ -39,22 +40,27 @@
   .title {
     font-weight: 600;
     color: var(--fg);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .actions {
     display: flex;
-    gap: 4px;
+    gap: 2px;
+    flex-shrink: 0;
   }
 
   .icon-btn {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     border-radius: 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     color: var(--fg-muted);
-    font-size: 16px;
+    font-size: 15px;
     line-height: 1;
   }
 

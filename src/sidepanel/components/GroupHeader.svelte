@@ -87,8 +87,8 @@
   .header {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 5px 6px;
+    gap: 2px;
+    padding: 4px 4px;
     background: var(--bg-elevated);
     border-bottom: 1px solid transparent;
     min-width: 0;
@@ -99,7 +99,8 @@
   }
 
   .caret {
-    width: 18px;
+    flex: 0 0 14px;
+    width: 14px;
     height: 18px;
     color: var(--fg-muted);
     font-size: 9px;
@@ -128,6 +129,8 @@
   }
 
   .name-text {
+    flex: 1;
+    min-width: 0;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -136,15 +139,17 @@
 
   .count {
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: 11.5px;
+    flex-shrink: 0;
   }
 
   .active-tag {
     background: var(--accent-bg);
     color: var(--accent);
     font-size: 10px;
-    padding: 1px 6px;
+    padding: 1px 5px;
     border-radius: 8px;
+    flex-shrink: 0;
   }
 
   .menu-wrap {
@@ -152,14 +157,15 @@
   }
 
   .menu-btn {
-    width: 22px;
-    height: 22px;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 20px;
     color: var(--fg-muted);
     border-radius: 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .menu-btn:hover {

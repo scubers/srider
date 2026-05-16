@@ -143,8 +143,8 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 6px 3px 22px;
+    gap: 5px;
+    padding: 3px 4px 3px 16px;
     border-radius: 4px;
     cursor: pointer;
     color: var(--fg);
@@ -172,8 +172,8 @@
   .tab.edge-bottom::after {
     content: '';
     position: absolute;
-    left: 12px;
-    right: 12px;
+    left: 8px;
+    right: 6px;
     height: 2px;
     background: var(--drop-line);
     z-index: 2;
@@ -215,10 +215,11 @@
 
   .title {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
+    font-size: 13.5px;
   }
 
   .remove {
