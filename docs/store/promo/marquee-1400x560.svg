@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 560">
+  <rect width="1400" height="560" fill="#faf9f6"/>
+
+  <!-- Left brand block: icon + wordmark + tagline -->
+  <g transform="translate(120, 180)">
+    <!-- icon, 140x140 -->
+    <g transform="scale(1.094)">
+      <rect width="128" height="128" rx="26" fill="#d97757"/>
+      <rect x="28" y="32" width="8" height="64" rx="4" fill="#fff"/>
+      <rect x="48" y="36" width="56" height="8" rx="4" fill="#fff"/>
+      <rect x="48" y="60" width="56" height="8" rx="4" fill="#fff"/>
+      <rect x="48" y="84" width="36" height="8" rx="4" fill="#fff" opacity="0.72"/>
+    </g>
+    <!-- wordmark -->
+    <text x="172" y="64" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="68" font-weight="700" fill="#1a1a1d" letter-spacing="-0.025em">Srider</text>
+    <text x="172" y="110" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="22" font-weight="500" fill="#3a3a40">侧边栏标签分组管理 · Tabs in groups</text>
+    <text x="172" y="140" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" fill="#8e8e93">Stay organized without leaving the page.</text>
+  </g>
+
+  <!-- Right column: feature bullets -->
+  <g transform="translate(820, 140)" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif">
+    <g transform="translate(0, 0)">
+      <circle cx="14" cy="14" r="14" fill="#d97757" opacity="0.12"/>
+      <circle cx="14" cy="14" r="5" fill="#d97757"/>
+      <text x="42" y="14" font-size="20" font-weight="600" fill="#1a1a1d">域名一键分组</text>
+      <text x="42" y="40" font-size="14" fill="#6e6e76">untracked 区按 hostname 自动整理成卡片</text>
+    </g>
+    <g transform="translate(0, 90)">
+      <circle cx="14" cy="14" r="14" fill="#d97757" opacity="0.12"/>
+      <circle cx="14" cy="14" r="5" fill="#d97757"/>
+      <text x="42" y="14" font-size="20" font-weight="600" fill="#1a1a1d">关闭后 pin 保留</text>
+      <text x="42" y="40" font-size="14" fill="#6e6e76">未 pin 关掉即移除；pin 过的留作 saved 灰条</text>
+    </g>
+    <g transform="translate(0, 180)">
+      <circle cx="14" cy="14" r="14" fill="#d97757" opacity="0.12"/>
+      <circle cx="14" cy="14" r="5" fill="#d97757"/>
+      <text x="42" y="14" font-size="20" font-weight="600" fill="#1a1a1d">实时搜索 + 高亮</text>
+      <text x="42" y="40" font-size="14" fill="#6e6e76">按 title 或 URL 子串过滤，命中段加粗 mark</text>
+    </g>
+    <g transform="translate(0, 270)">
+      <circle cx="14" cy="14" r="14" fill="#d97757" opacity="0.12"/>
+      <circle cx="14" cy="14" r="5" fill="#d97757"/>
+      <text x="42" y="14" font-size="20" font-weight="600" fill="#1a1a1d">Cmd/Ctrl+B 一键召唤</text>
+      <text x="42" y="40" font-size="14" fill="#6e6e76">快捷键随手开关侧边栏，干净不挡内容</text>
+    </g>
+  </g>
+</svg>

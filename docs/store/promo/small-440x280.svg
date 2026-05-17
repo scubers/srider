@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 280">
+  <rect width="440" height="280" fill="#faf9f6"/>
+
+  <!-- Icon, centered upper -->
+  <g transform="translate(220, 86) scale(0.5) translate(-64, -64)">
+    <rect width="128" height="128" rx="26" fill="#d97757"/>
+    <rect x="28" y="32" width="8" height="64" rx="4" fill="#fff"/>
+    <rect x="48" y="36" width="56" height="8" rx="4" fill="#fff"/>
+    <rect x="48" y="60" width="56" height="8" rx="4" fill="#fff"/>
+    <rect x="48" y="84" width="36" height="8" rx="4" fill="#fff" opacity="0.72"/>
+  </g>
+
+  <!-- Product name -->
+  <text x="220" y="186" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif" font-size="34" font-weight="700" fill="#1a1a1d" text-anchor="middle" letter-spacing="-0.02em">Srider</text>
+
+  <!-- Taglines -->
+  <text x="220" y="218" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="14" font-weight="500" fill="#3a3a40" text-anchor="middle">侧边栏标签分组管理</text>
+  <text x="220" y="244" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#8e8e93" text-anchor="middle">Tabs in groups, right in the side panel</text>
+</svg>
