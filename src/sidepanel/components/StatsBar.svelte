@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$shared/i18n/index.svelte';
   import type { WindowState } from '$shared/types';
 
   let { window: win }: { window: WindowState } = $props();
@@ -32,15 +33,15 @@
   });
 </script>
 
-<section class="stats" aria-label="侧边栏统计">
+<section class="stats" aria-label={t('stats.aria_label')}>
   <div class="stat">
     <div class="value tnum">{tabCount}</div>
-    <div class="label">标签</div>
+    <div class="label">{t('stats.tabs')}</div>
   </div>
   <div class="divider" aria-hidden="true"></div>
   <div class="stat">
     <div class="value tnum">{groupCount}</div>
-    <div class="label">分组</div>
+    <div class="label">{t('stats.groups')}</div>
   </div>
   <div class="divider" aria-hidden="true"></div>
   <div class="stat">
@@ -51,7 +52,7 @@
         —
       {/if}
     </div>
-    <div class="label">内存</div>
+    <div class="label">{t('stats.memory')}</div>
   </div>
 </section>
 

@@ -1,12 +1,16 @@
 <script lang="ts">
   import { sendMessage } from '$shared/messages';
+  import { t } from '$shared/i18n/index.svelte';
   import type { WindowState } from '$shared/types';
   import SearchBox from './SearchBox.svelte';
 
   let { window }: { window: WindowState } = $props();
 
   async function createGroup() {
-    const name = prompt('新分组名称', '新分组');
+    const name = prompt(
+      t('header.new_group_prompt_title'),
+      t('header.new_group_default_name'),
+    );
     if (!name) return;
     await sendMessage({ type: 'createGroup', windowId: window.id, name });
   }
@@ -22,11 +26,11 @@
 -->
 <header class="header">
   <SearchBox />
-  <button class="pill" onclick={createGroup} title="新建分组">
+  <button class="pill" onclick={createGroup} title={t('header.new_group_title')}>
     <span class="plus" aria-hidden="true">+</span>
-    <span>新建分组</span>
+    <span>{t('header.new_group_button')}</span>
   </button>
-  <button class="icon-btn" onclick={openOptions} title="设置" aria-label="设置">
+  <button class="icon-btn" onclick={openOptions} title={t('header.settings')} aria-label={t('header.settings')}>
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
       <path
         fill="currentColor"

@@ -10,6 +10,7 @@
   import { setupGlobalDnD } from './dnd';
   import { activeTabStore } from './active-tab.svelte';
   import { searchStore } from './search.svelte';
+  import { t } from '$shared/i18n/index.svelte';
   import type { WindowState } from '$shared/types';
 
   let chromeWindowId = $state<number | null>(null);
@@ -147,9 +148,9 @@
 
 <div class="app">
   {#if !appDataStore.loaded || !settingsStore.loaded || chromeWindowId === null}
-    <div class="loading">加载中…</div>
+    <div class="loading">{t('app.loading')}</div>
   {:else if !windowState}
-    <div class="loading">正在匹配窗口…</div>
+    <div class="loading">{t('app.matching_window')}</div>
   {:else}
     <Header window={windowState} />
     <StatsBar window={windowState} />

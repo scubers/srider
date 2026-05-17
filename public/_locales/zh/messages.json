@@ -1,0 +1,14 @@
+{
+  "extension_name": {
+    "message": "Srider"
+  },
+  "extension_description": {
+    "message": "侧边栏标签管理。按域名一键分组或手动归类，固定值得保留的标签，毫秒级搜索任何已打开的页面。"
+  },
+  "action_default_title": {
+    "message": "打开 Srider"
+  },
+  "command_toggle_panel": {
+    "message": "切换 Srider 侧边栏"
+  }
+}

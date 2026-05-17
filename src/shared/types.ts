@@ -74,12 +74,16 @@ export interface AppData {
 
 export type Theme = 'light' | 'dark' | 'system';
 export type SavedTabClickBehavior = 'current-tab' | 'new-tab' | 'new-window';
+/** Supported UI locales. `auto` follows the browser; the rest pin a locale. */
+export type Locale = 'en' | 'zh' | 'ja';
+export type LanguageSetting = 'auto' | Locale;
 
 export interface Settings {
   theme: Theme;
   showFavicons: boolean;
   savedTabClickBehavior: SavedTabClickBehavior;
   defaultGroupExpanded: boolean;
+  language: LanguageSetting;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -87,6 +91,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showFavicons: true,
   savedTabClickBehavior: 'new-tab',
   defaultGroupExpanded: true,
+  language: 'auto',
 };
 
 export function emptyAppData(): AppData {

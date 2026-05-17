@@ -105,7 +105,10 @@ async function createGroup(msg: Extract<Message, { type: 'createGroup' }>): Prom
     if (!window) throw new Error(`window ${msg.windowId} not found`);
     const group: Group = {
       id: uuid(),
-      name: msg.name.trim() || '新分组',
+      // UI is the source of truth for the localized default. SW falls back
+      // to a neutral English string if (and only if) a caller ever sends
+      // an empty name — the current UI prevents that anyway.
+      name: msg.name.trim() || 'New Group',
       collapsed: false,
       tabs: [],
       createdAt: Date.now(),

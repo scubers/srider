@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$shared/i18n/index.svelte';
   import { searchStore } from '../search.svelte';
 
   let inputEl: HTMLInputElement | undefined = $state();
@@ -28,12 +29,12 @@
     bind:this={inputEl}
     bind:value={searchStore.query}
     type="search"
-    placeholder="搜索标签..."
-    aria-label="搜索标签"
+    placeholder={t('search.placeholder')}
+    aria-label={t('search.aria_label')}
     onkeydown={onKeydown}
   />
   {#if searchStore.active}
-    <button class="clear" onclick={clear} title="清空 (Esc)" aria-label="清空搜索">
+    <button class="clear" onclick={clear} title={t('search.clear_title')} aria-label={t('search.clear_aria')}>
       <svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
         <path d="M1 1 9 9 M9 1 1 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
       </svg>

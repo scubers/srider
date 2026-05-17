@@ -1,0 +1,14 @@
+{
+  "extension_name": {
+    "message": "Srider"
+  },
+  "extension_description": {
+    "message": "サイドパネル型タブマネージャー。ドメインで一括分類または手動でグループ化、残したいタブをピン留め、ミリ秒単位でタブを検索。"
+  },
+  "action_default_title": {
+    "message": "Srider を開く"
+  },
+  "command_toggle_panel": {
+    "message": "Srider サイドパネルを切り替え"
+  }
+}

@@ -3,6 +3,7 @@
   import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
   import type { WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
+  import { t } from '$shared/i18n/index.svelte';
   import { makeUntrackedDropData } from '../dnd';
   import { activeTabStore } from '../active-tab.svelte';
   import TabItem from './TabItem.svelte';
@@ -104,7 +105,7 @@
   async function closeAll() {
     menuOpen = false;
     if (liveCount === 0) return;
-    if (!confirm(`关闭"未分类"里的 ${liveCount} 个已打开标签？`)) return;
+    if (!confirm(t('untracked.confirm_close_all', { count: liveCount }))) return;
     await sendMessage({ type: 'closeAllInGroup', windowId: win.id, groupId: null });
   }
 </script>
@@ -120,18 +121,18 @@
     <span class="icon" aria-hidden="true">
       <svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2 4h4l1.5 1.5h6.5v7.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z"/></svg>
     </span>
-    <span class="title">未分类</span>
+    <span class="title">{t('untracked.title')}</span>
     <span class="count tnum">{win.untrackedTabs.length}</span>
     <button
       class="action"
       onclick={autoGroupByDomain}
       disabled={busy || win.untrackedTabs.length === 0}
-      title="按域名自动整理成分组"
+      title={t('untracked.auto_group_title')}
     >
-      按域名分组
+      {t('untracked.auto_group_button')}
     </button>
     <div class="menu-wrap" bind:this={menuEl}>
-      <button bind:this={menuBtnEl} class="menu-btn" onclick={toggleMenu} aria-label="更多操作">⋯</button>
+      <button bind:this={menuBtnEl} class="menu-btn" onclick={toggleMenu} aria-label={t('untracked.menu_aria')}>⋯</button>
     </div>
   </div>
   <ul role="list">
@@ -153,7 +154,7 @@
     style:top="{menuPos.top}px"
   >
     <button role="menuitem" disabled={liveCount === 0} onclick={closeAll}>
-      关闭所有 <span class="count-hint">({liveCount})</span>
+      {t('untracked.menu_close_all')} <span class="count-hint">({liveCount})</span>
     </button>
   </div>
 {/if}

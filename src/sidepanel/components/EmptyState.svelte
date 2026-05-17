@@ -1,18 +1,26 @@
 <script lang="ts">
-  // No props.
+  import { t } from '$shared/i18n/index.svelte';
+
+  // Pre-split the subtitle on \n so the {#each} can render it as separate
+  // lines. Templating it directly with {@html} would fight i18n + a11y.
+  const subtitleLines = $derived(t('empty.subtitle').split('\n'));
 </script>
 
 <div class="empty">
   <div class="icon">📂</div>
-  <p class="primary">还没有分组</p>
-  <p class="secondary">点击右上角的 + 新建分组<br />或把浏览器标签拖到这里</p>
+  <p class="primary">{t('empty.title')}</p>
+  <p class="secondary">
+    {#each subtitleLines as line, i (i)}
+      {line}{#if i < subtitleLines.length - 1}<br />{/if}
+    {/each}
+  </p>
 </div>
 
 <style>
   .empty {
     padding: 48px 16px;
     text-align: center;
-    color: var(--fg-muted);
+    color: var(--text-mute);
   }
 
   .icon {
@@ -24,7 +32,7 @@
   .primary {
     margin: 0 0 6px;
     font-weight: 500;
-    color: var(--fg);
+    color: var(--text);
   }
 
   .secondary {

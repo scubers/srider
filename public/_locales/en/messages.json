@@ -1,0 +1,18 @@
+{
+  "extension_name": {
+    "message": "Srider",
+    "description": "Name shown in chrome://extensions and on the Chrome Web Store."
+  },
+  "extension_description": {
+    "message": "Side-panel tab manager. Group tabs by domain or by hand, pin the ones worth keeping, search any tab in milliseconds.",
+    "description": "Short marketing description shown under the extension name."
+  },
+  "action_default_title": {
+    "message": "Open Srider",
+    "description": "Tooltip on the toolbar icon."
+  },
+  "command_toggle_panel": {
+    "message": "Toggle Srider side panel",
+    "description": "Description for the keyboard shortcut in chrome://extensions/shortcuts."
+  }
+}

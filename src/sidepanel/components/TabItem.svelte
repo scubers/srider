@@ -8,6 +8,7 @@
   } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
   import type { TabRef, WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
+  import { t } from '$shared/i18n/index.svelte';
   import { settingsStore } from '$shared/stores.svelte';
   import { extractGroupingDomain } from '$shared/url';
   import { makeTabDragData, makeTabDropData } from '../dnd';
@@ -163,8 +164,8 @@
     <button
       class="pin"
       onclick={togglePin}
-      title={isPinned ? '取消固定（关闭时一并删除）' : '固定（关闭后保留为 saved）'}
-      aria-label={isPinned ? '取消固定' : '固定'}
+      title={isPinned ? t('tab.unpin_title') : t('tab.pin_title')}
+      aria-label={isPinned ? t('tab.unpin_aria') : t('tab.pin_aria')}
       aria-pressed={isPinned}
     >
       <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
@@ -180,8 +181,8 @@
   <button
     class="remove"
     onclick={onRemove}
-    title={isLive ? '关闭标签' : '从分组移除'}
-    aria-label={isLive ? '关闭标签' : '从分组移除'}
+    title={isLive ? t('tab.close_live_title') : t('tab.remove_saved_title')}
+    aria-label={isLive ? t('tab.close_live_title') : t('tab.remove_saved_title')}
   >×</button>
 </div>
 

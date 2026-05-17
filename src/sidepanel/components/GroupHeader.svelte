@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Group, WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
+  import { t } from '$shared/i18n/index.svelte';
   import { searchStore } from '../search.svelte';
   import Favicon from './Favicon.svelte';
   import RenameInput from './RenameInput.svelte';
@@ -109,7 +110,7 @@
 
   async function deleteGroup() {
     menuOpen = false;
-    if (!confirm(`删除分组「${group.name}」？\n（已打开的标签会移到"未归类"，已保存的标签将丢失）`)) return;
+    if (!confirm(t('group.confirm_delete', { name: group.name }))) return;
     await sendMessage({ type: 'deleteGroup', windowId: win.id, groupId: group.id });
   }
 
@@ -119,7 +120,7 @@
   async function closeAll() {
     menuOpen = false;
     if (liveCount === 0) return;
-    if (!confirm(`关闭分组「${group.name}」里的 ${liveCount} 个已打开标签？\n（pin 过的会保留为 saved；未 pin 的会从分组里删除）`)) return;
+    if (!confirm(t('group.confirm_close_all', { name: group.name, count: liveCount }))) return;
     await sendMessage({ type: 'closeAllInGroup', windowId: win.id, groupId: group.id });
   }
 
@@ -144,7 +145,7 @@
     {#if isAuto}
       <Favicon src={groupIcon} host={iconHost} size={18} />
     {:else}
-      <span class="manual-icon" title="手动分组">
+      <span class="manual-icon" title={t('group.manual_title')}>
         <svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M2 4a1.5 1.5 0 0 1 1.5-1.5h3.2a1.5 1.5 0 0 1 1.06.44L9 4.18h3.5A1.5 1.5 0 0 1 14 5.68V12a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4z"/></svg>
       </span>
     {/if}
@@ -156,7 +157,7 @@
     <span
       class="name"
       title={isAuto && group.autoDomain
-        ? `自动分组（域名：${group.autoDomain}）`
+        ? t('group.auto_title', { domain: group.autoDomain })
         : group.name}
     >
       <span class="name-text">{group.name}</span>
@@ -170,14 +171,14 @@
     </svg>
   </span>
 
-  <button class="add-btn" onclick={addNewTab} title="在该分组内新建标签页" aria-label="在该分组内新建标签页">
+  <button class="add-btn" onclick={addNewTab} title={t('group.add_tab_title')} aria-label={t('group.add_tab_title')}>
     <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
       <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6 2.2v7.6M2.2 6h7.6"/>
     </svg>
   </button>
 
   <div class="menu-wrap" bind:this={menuEl}>
-    <button bind:this={menuBtnEl} class="menu-btn" onclick={toggleMenu} aria-label="更多操作">⋯</button>
+    <button bind:this={menuBtnEl} class="menu-btn" onclick={toggleMenu} aria-label={t('group.menu_aria')}>⋯</button>
   </div>
 </div>
 
@@ -189,11 +190,11 @@
     style:left="{menuPos.left}px"
     style:top="{menuPos.top}px"
   >
-    <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>重命名</button>
+    <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>{t('group.menu_rename')}</button>
     <button role="menuitem" disabled={liveCount === 0} onclick={closeAll}>
-      关闭所有 <span class="count-hint">({liveCount})</span>
+      {t('group.menu_close_all')} <span class="count-hint">({liveCount})</span>
     </button>
-    <button role="menuitem" class="danger" onclick={deleteGroup}>删除分组</button>
+    <button role="menuitem" class="danger" onclick={deleteGroup}>{t('group.menu_delete')}</button>
   </div>
 {/if}
 

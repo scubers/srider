@@ -11,6 +11,7 @@
   import { makeGroupDragData, makeGroupDropData } from '../dnd';
   import { activeTabStore } from '../active-tab.svelte';
   import { searchStore } from '../search.svelte';
+  import { t } from '$shared/i18n/index.svelte';
   import GroupHeader from './GroupHeader.svelte';
   import TabItem from './TabItem.svelte';
 
@@ -116,7 +117,7 @@
         </li>
       {/each}
       {#if group.tabs.length === 0 && !searchStore.active}
-        <li class="empty">空分组 — 拖标签到这里</li>
+        <li class="empty">{t('group.empty_hint')}</li>
       {/if}
     </ul>
   {/if}
