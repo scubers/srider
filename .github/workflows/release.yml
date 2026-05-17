@@ -1,0 +1,72 @@
+name: Release
+
+# Triggered by pushing a vX.Y.Z tag (e.g. `git tag v0.2.0 && git push --tags`).
+# Builds the extension on a Linux runner and publishes a GitHub Release with
+# the packaged zip attached.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        # Catches the common mistake of tagging vX.Y.Z without bumping
+        # package.json first — manifest version would otherwise diverge
+        # from the release name.
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "package.json: $PKG_VERSION"
+          echo "git tag:      $TAG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match git tag ($TAG_VERSION). Bump package.json, commit, then re-tag."
+            exit 1
+          fi
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build + package zip
+        # `npm run package` runs `npm run build` then zips dist/ into
+        # release/srider-v<version>.zip. Icons are checked in, so the
+        # macOS-only build-icons script is not invoked here.
+        run: npm run package
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/srider-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          name: Srider ${{ github.ref_name }}
+          body: |
+            **Install (sideload)**
+
+            1. Download `srider-${{ github.ref_name }}.zip` from the assets below.
+            2. Unzip into a folder you'll keep around (the extension is loaded directly from it).
+            3. Open `chrome://extensions/` or `edge://extensions/`.
+            4. Toggle **开发者模式 / Developer mode** on (top-right).
+            5. Click **加载已解压的扩展程序 / Load unpacked** and pick the unzipped folder.
+
+            Updating: download the new zip → overwrite the same folder → hit ⟳ on the extension card.
+
+            ---
