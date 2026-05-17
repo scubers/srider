@@ -13,6 +13,8 @@
   import { makeTabDragData, makeTabDropData } from '../dnd';
   import { activeTabStore } from '../active-tab.svelte';
   import Favicon from './Favicon.svelte';
+  import { searchStore } from '../search.svelte';
+  import { splitHighlight } from '../highlight';
 
   let {
     tab,
@@ -43,6 +45,8 @@
   const isPinned = $derived(tab.pinned === true);
   const canPin = $derived(groupId !== null);
   const host = $derived(extractGroupingDomain(tab.url) ?? tab.url ?? '?');
+  const displayTitle = $derived(tab.title || tab.url);
+  const titleSegments = $derived(splitHighlight(displayTitle, searchStore.normalized));
 
   onMount(() => {
     if (!rootEl) return;
@@ -149,7 +153,11 @@
     </span>
   {/if}
 
-  <span class="title">{tab.title || tab.url}</span>
+  <span class="title">
+    {#each titleSegments as seg, i (i)}
+      {#if seg.mark}<mark>{seg.text}</mark>{:else}{seg.text}{/if}
+    {/each}
+  </span>
 
   {#if canPin}
     <button
@@ -269,6 +277,22 @@
     white-space: nowrap;
     font-size: 13.5px;
     line-height: 1.35;
+  }
+
+  .title mark {
+    background: var(--accent-bg-soft);
+    color: var(--accent);
+    border-radius: 2px;
+    padding: 0 1px;
+    font: inherit;
+  }
+
+  /* Active row already paints itself with --accent-bg-soft, so the default
+     mark background blends in. Use the solid accent for high-contrast
+     highlight on active rows. */
+  .tab.active .title mark {
+    background: var(--accent);
+    color: #fff;
   }
 
   .pin,

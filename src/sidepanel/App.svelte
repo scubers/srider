@@ -9,6 +9,7 @@
   import EmptyState from './components/EmptyState.svelte';
   import { setupGlobalDnD } from './dnd';
   import { activeTabStore } from './active-tab.svelte';
+  import { searchStore } from './search.svelte';
   import type { WindowState } from '$shared/types';
 
   let chromeWindowId = $state<number | null>(null);
@@ -86,6 +87,11 @@
   $effect(() => {
     const activeChromeTabId = activeTabStore.chromeTabId;
     if (activeChromeTabId === null) return;
+    // During search the card is force-expanded by Group.svelte without
+    // touching storage; if we sent toggleGroupCollapsed(false) from here it
+    // would persist the unwanted expand and the card would stay open after
+    // clearing the search. Skip until search is over.
+    if (searchStore.active) return;
     const w = windowState;
     if (!w) return;
 

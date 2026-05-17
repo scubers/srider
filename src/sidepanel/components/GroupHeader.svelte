@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Group, WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
+  import { searchStore } from '../search.svelte';
   import Favicon from './Favicon.svelte';
   import RenameInput from './RenameInput.svelte';
 
@@ -15,6 +16,9 @@
   } = $props();
 
   const isAuto = $derived(group.kind === 'auto-domain');
+  /** Mirror of Group.svelte: search force-expands the card. Used so the
+      caret rotation and aria-expanded reflect what the user actually sees. */
+  const effectiveCollapsed = $derived(searchStore.active ? false : group.collapsed);
   const groupIcon = $derived.by(() => {
     if (!isAuto) return null;
     for (const t of group.tabs) {
@@ -60,12 +64,14 @@
   }
 
   function onRowClick(e: MouseEvent) {
+    if (searchStore.active) return;
     if (renaming) return;
     if ((e.target as HTMLElement | null)?.closest('.menu-wrap, .menu')) return;
     void onToggle();
   }
 
   function onRowKeydown(e: KeyboardEvent) {
+    if (searchStore.active) return;
     if (renaming) return;
     if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
@@ -130,7 +136,7 @@
   class="header"
   role="button"
   tabindex="0"
-  aria-expanded={!group.collapsed}
+  aria-expanded={!effectiveCollapsed}
   onclick={onRowClick}
   onkeydown={onRowKeydown}
 >
@@ -158,7 +164,7 @@
     <span class="count tnum">{totalCount}</span>
   {/if}
 
-  <span class="caret" class:collapsed={group.collapsed} aria-hidden="true">
+  <span class="caret" class:collapsed={effectiveCollapsed} aria-hidden="true">
     <svg viewBox="0 0 10 10" width="10" height="10">
       <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M1.5 3.5 5 7l3.5-3.5"/>
     </svg>

@@ -10,6 +10,7 @@
   import { sendMessage } from '$shared/messages';
   import { makeGroupDragData, makeGroupDropData } from '../dnd';
   import { activeTabStore } from '../active-tab.svelte';
+  import { searchStore } from '../search.svelte';
   import GroupHeader from './GroupHeader.svelte';
   import TabItem from './TabItem.svelte';
 
@@ -22,6 +23,14 @@
     activeTabStore.chromeTabId !== null &&
       group.tabs.some((t) => t.chromeTabId === activeTabStore.chromeTabId),
   );
+
+  const matchedTabs = $derived(group.tabs.filter((t) => searchStore.match(t)));
+  /** Card hides itself entirely when a search is active and yields no matches. */
+  const visibleInSearch = $derived(!searchStore.active || matchedTabs.length > 0);
+  /** During search, the card is always expanded regardless of the persisted
+      `group.collapsed`. effectiveCollapsed must NOT be written back to
+      storage — it's purely a render-time view. */
+  const effectiveCollapsed = $derived(searchStore.active ? false : group.collapsed);
 
   let rootEl: HTMLDivElement | undefined = $state();
   let hoverEdge: Edge | null = $state(null);
@@ -83,6 +92,7 @@
   }
 </script>
 
+{#if visibleInSearch}
 <div
   bind:this={rootEl}
   class="card"
@@ -93,9 +103,9 @@
   data-group-id={group.id}
 >
   <GroupHeader {group} window={win} onToggle={toggle} />
-  {#if !group.collapsed}
+  {#if !effectiveCollapsed}
     <ul class="tabs" role="list">
-      {#each group.tabs as tab (tab.id)}
+      {#each matchedTabs as tab (tab.id)}
         <li>
           <TabItem
             {tab}
@@ -105,12 +115,13 @@
           />
         </li>
       {/each}
-      {#if group.tabs.length === 0}
+      {#if group.tabs.length === 0 && !searchStore.active}
         <li class="empty">空分组 — 拖标签到这里</li>
       {/if}
     </ul>
   {/if}
 </div>
+{/if}
 
 <style>
   .card {

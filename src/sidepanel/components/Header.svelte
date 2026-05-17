@@ -1,6 +1,7 @@
 <script lang="ts">
   import { sendMessage } from '$shared/messages';
   import type { WindowState } from '$shared/types';
+  import SearchBox from './SearchBox.svelte';
 
   let { window }: { window: WindowState } = $props();
 
@@ -20,6 +21,7 @@
   icon + "Side Tab" at the very top. This header is a slim action toolbar.
 -->
 <header class="header">
+  <SearchBox />
   <button class="pill" onclick={createGroup} title="新建分组">
     <span class="plus" aria-hidden="true">+</span>
     <span>新建分组</span>
@@ -42,7 +44,7 @@
   .header {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: stretch;
     gap: 4px;
     padding: 6px 10px 4px;
     background: var(--bg);

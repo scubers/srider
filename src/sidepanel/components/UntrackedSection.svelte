@@ -6,6 +6,7 @@
   import { makeUntrackedDropData } from '../dnd';
   import { activeTabStore } from '../active-tab.svelte';
   import TabItem from './TabItem.svelte';
+  import { searchStore } from '../search.svelte';
 
   let { window: win }: { window: WindowState } = $props();
   let rootEl: HTMLElement | undefined = $state();
@@ -19,6 +20,8 @@
   const liveCount = $derived(
     win.untrackedTabs.filter((t) => t.chromeTabId !== null).length,
   );
+  const matchedTabs = $derived(win.untrackedTabs.filter((t) => searchStore.match(t)));
+  const visibleInSearch = $derived(!searchStore.active || matchedTabs.length > 0);
 
   onMount(() => {
     if (!rootEl) return;
@@ -106,6 +109,7 @@
   }
 </script>
 
+{#if visibleInSearch}
 <section
   bind:this={rootEl}
   class="card"
@@ -131,13 +135,14 @@
     </div>
   </div>
   <ul role="list">
-    {#each win.untrackedTabs as tab (tab.id)}
+    {#each matchedTabs as tab (tab.id)}
       <li>
         <TabItem {tab} groupId={null} window={win} iconVariant="favicon" />
       </li>
     {/each}
   </ul>
 </section>
+{/if}
 
 {#if menuOpen && menuPos}
   <div
