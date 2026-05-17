@@ -1,8 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Brand orange, full-bleed. No rounded corners on purpose: Chrome paints
-       a white tile behind extension icons, so any transparent corner would
-       show through as a white frame. We leave any rounding to Chrome's UI. -->
-  <rect width="128" height="128" fill="#d97757"/>
+  <!-- Brand orange with rounded corners; outside the curve is transparent. -->
+  <rect width="128" height="128" rx="26" fill="#d97757"/>
   <!-- Side-panel indicator: a vertical pill on the left -->
   <rect x="28" y="32" width="8" height="64" rx="4" fill="#fff"/>
   <!-- Three tab rows stacked to the right -->
