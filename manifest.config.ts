@@ -3,7 +3,7 @@ import pkg from './package.json' with { type: 'json' };
 
 export default defineManifest({
   manifest_version: 3,
-  name: 'Side Tab',
+  name: 'Srider',
   version: pkg.version,
   description: pkg.description,
   minimum_chrome_version: '114',
@@ -20,7 +20,7 @@ export default defineManifest({
     open_in_tab: true,
   },
   action: {
-    default_title: 'Open Side Tab',
+    default_title: 'Open Srider',
   },
   commands: {
     'toggle-side-panel': {
@@ -28,7 +28,7 @@ export default defineManifest({
         default: 'Ctrl+B',
         mac: 'Command+B',
       },
-      description: '切换 Side Tab 侧边栏 (Toggle Side Tab)',
+      description: '切换 Srider 侧边栏 (Toggle Srider)',
     },
   },
 });

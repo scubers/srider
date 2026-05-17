@@ -47,7 +47,7 @@
 </script>
 
 <main>
-  <h1>Side Tab 设置</h1>
+  <h1>Srider 设置</h1>
 
   {#if !settingsStore.loaded}
     <p>加载中…</p>

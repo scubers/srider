@@ -18,7 +18,7 @@
 
 <!--
   No brand/title — Chrome's own side-panel chrome already shows the extension
-  icon + "Side Tab" at the very top. This header is a slim action toolbar.
+  icon + "Srider" at the very top. This header is a slim action toolbar.
 -->
 <header class="header">
   <SearchBox />

@@ -1,5 +1,5 @@
 /**
- * Core data types for Side Tab. See docs/superpowers/specs/2026-05-16-side-tab-extension-design.md §4.
+ * Core data types for Srider. See docs/superpowers/specs/2026-05-16-side-tab-extension-design.md §4.
  *
  * All persisted state lives under three storage keys:
  *   - chrome.storage.local  → AppData (groups, tabs, window states)
