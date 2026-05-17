@@ -61,9 +61,28 @@
   });
 
   /**
-   * Follow the active Chrome tab: expand its group (if collapsed) and scroll
-   * the matching TabItem into view.
+   * Follow the active Chrome tab: when the user actually switches tabs,
+   * expand the new tab's group if it's collapsed and scroll the row into
+   * view. The expand/scroll fires ONLY on real tab switches — if the user
+   * later collapses the active tab's group manually, we leave it collapsed.
+   *
+   * The effect inevitably re-runs whenever anything reactive it reads
+   * changes (group.collapsed, group.tabs, etc.), so we guard with
+   * lastHandledTabId: any re-run where chromeTabId is unchanged is a no-op
+   * EXCEPT for finishing a pending scroll that was queued behind an expand.
    */
+  let lastHandledTabId: number | null = null;
+  let pendingScrollTabRefId: string | null = null;
+
+  function scrollTabIntoView(tabRefId: string): void {
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-tab-id="${CSS.escape(tabRefId)}"]`,
+      );
+      el?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
   $effect(() => {
     const activeChromeTabId = activeTabStore.chromeTabId;
     if (activeChromeTabId === null) return;
@@ -86,23 +105,37 @@
     }
     if (foundTabRefId === null) return;
 
-    if (collapsedGroupId !== null) {
-      void sendMessage({
-        type: 'toggleGroupCollapsed',
-        windowId: w.id,
-        groupId: collapsedGroupId,
-        collapsed: false,
-      });
+    const tabChanged = activeChromeTabId !== lastHandledTabId;
+
+    if (tabChanged) {
+      lastHandledTabId = activeChromeTabId;
+      if (collapsedGroupId !== null) {
+        // Auto-expand on switch and defer scrolling until the next effect
+        // run sees the group expanded.
+        pendingScrollTabRefId = foundTabRefId;
+        void sendMessage({
+          type: 'toggleGroupCollapsed',
+          windowId: w.id,
+          groupId: collapsedGroupId,
+          collapsed: false,
+        });
+        return;
+      }
+      pendingScrollTabRefId = null;
+      scrollTabIntoView(foundTabRefId);
       return;
     }
 
-    const tabRefId = foundTabRefId;
-    requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLElement>(
-        `[data-tab-id="${CSS.escape(tabRefId)}"]`,
-      );
-      el?.scrollIntoView({ block: 'nearest' });
-    });
+    // Tab unchanged: only act if we still owe a scroll to the same row and
+    // its group is now expanded. Anything else (user manually collapsing
+    // this card, an unrelated reactive change) is left alone.
+    if (
+      pendingScrollTabRefId === foundTabRefId &&
+      collapsedGroupId === null
+    ) {
+      pendingScrollTabRefId = null;
+      scrollTabIntoView(foundTabRefId);
+    }
   });
 </script>
 
