@@ -28,19 +28,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify tag matches package.json version
-        # Catches the common mistake of tagging vX.Y.Z without bumping
-        # package.json first — manifest version would otherwise diverge
-        # from the release name.
+      - name: Sync package.json version from tag
+        # The git tag is the source of truth for releases. Overwrite
+        # pkg.version in-place on the runner (not committed back) so
+        # crxjs picks it up for manifest.json and the package script
+        # names the zip srider-v<tag>.zip. The repo's package.json
+        # can stay at whatever dev version is convenient.
         run: |
-          PKG_VERSION="$(node -p "require('./package.json').version")"
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          echo "package.json: $PKG_VERSION"
-          echo "git tag:      $TAG_VERSION"
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::package.json version ($PKG_VERSION) does not match git tag ($TAG_VERSION). Bump package.json, commit, then re-tag."
-            exit 1
-          fi
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${TAG_VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "package.json version set to ${TAG_VERSION}"
 
       - name: Run tests
         run: npm test
