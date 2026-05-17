@@ -22,7 +22,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Match the local dev npm major (11.x). Node 22's bundled npm is
+          # 10.x, which strict-validates lockfileVersion-3 entries
+          # differently from npm 11 and fails on peer-dep edge cases for
+          # this lockfile (Missing: picomatch@4.0.4 ...).
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
