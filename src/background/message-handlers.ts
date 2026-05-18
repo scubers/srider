@@ -1,56 +1,70 @@
 /**
  * Handlers for messages dispatched from the UI (Side Panel / Options).
  *
- * Each handler mutates AppData via the shared serialized write queue so it
- * does not race with tab event handlers.
+ * Mutations to per-window state go through `withWindow / withSessionData`.
+ * Mutations to Stash go through `withAppData`.
  */
-import { getAppData } from '$shared/storage';
+import { getAppData, getSessionData } from '$shared/storage';
 import { uuid } from '$shared/id';
 import { extractGroupingDomain, isSafeNavigationUrl } from '$shared/url';
 import { formatAutoGroupName } from '$shared/group-naming';
 import type {
-  AppData,
   Group,
-  GroupId,
+  StashFolder,
+  StashItem,
   TabRef,
-  TabRefId,
   WindowState,
-  WindowUUID,
 } from '$shared/types';
 import type { Message, MessageResponse } from '$shared/messages';
-import { withAppData } from './write-queue';
+import { withAppData, withSessionData, withWindow } from './write-queue';
 import { cleanupEmptyAutoGroups } from './group-cleanup';
-import { registerPendingOpen, reserveNewTabRoute } from './tab-handlers';
+import { reservePendingTabRoute } from './tab-handlers';
 
-function getWindow(data: AppData, windowId: WindowUUID): WindowState | null {
-  // Use Object.hasOwn to avoid prototype-chain access (`__proto__`, etc.).
-  if (!Object.hasOwn(data.windows, windowId)) return null;
-  return data.windows[windowId] ?? null;
-}
+const DEFAULT_STASH_FOLDER_NAME = 'Unsorted';
 
-function getGroup(window: WindowState, groupId: GroupId): Group | null {
-  return window.groups.find((g) => g.id === groupId) ?? null;
-}
+// ---------- Input bounds ----------
+// Defense against UI bugs / compromised extension pages that could otherwise
+// exhaust chrome.storage quota (local & session caps are ~10MB each).
+const MAX_NAME_LEN = 200;
+const MAX_GROUPS_PER_WINDOW = 100;
+const MAX_TABS_PER_GROUP = 500;
+const MAX_STASH_FOLDERS = 200;
+const MAX_STASH_ITEMS_PER_FOLDER = 1000;
+const MAX_STASH_OPEN_AT_ONCE = 50;
 
-function findTab(
-  window: WindowState,
-  tabRefId: TabRefId,
-): { tab: TabRef; container: TabRef[]; groupId: GroupId | null } | null {
-  for (const g of window.groups) {
-    const tab = g.tabs.find((t) => t.id === tabRefId);
-    if (tab) return { tab, container: g.tabs, groupId: g.id };
+function validName(s: unknown): string {
+  if (typeof s !== 'string') throw new Error('name must be a string');
+  const trimmed = s.trim();
+  if (!trimmed) throw new Error('name cannot be empty');
+  if (trimmed.length > MAX_NAME_LEN) {
+    throw new Error(`name too long (max ${MAX_NAME_LEN})`);
   }
-  const tab = window.untrackedTabs.find((t) => t.id === tabRefId);
-  if (tab) return { tab, container: window.untrackedTabs, groupId: null };
-  return null;
+  return trimmed;
+}
+
+function findGroup(state: WindowState, groupId: string): Group | null {
+  return state.groups.find((g) => g.id === groupId) ?? null;
 }
 
 function findContainer(
-  window: WindowState,
-  groupId: GroupId | null,
+  state: WindowState,
+  groupId: string | null,
 ): TabRef[] | null {
-  if (groupId === null) return window.untrackedTabs;
-  return window.groups.find((g) => g.id === groupId)?.tabs ?? null;
+  if (groupId === null) return state.untrackedTabs;
+  return state.groups.find((g) => g.id === groupId)?.tabs ?? null;
+}
+
+function findTabRef(
+  state: WindowState,
+  tabRefId: string,
+): { tab: TabRef; container: TabRef[]; groupId: string | null } | null {
+  for (const g of state.groups) {
+    const tab = g.tabs.find((t) => t.id === tabRefId);
+    if (tab) return { tab, container: g.tabs, groupId: g.id };
+  }
+  const tab = state.untrackedTabs.find((t) => t.id === tabRefId);
+  if (tab) return { tab, container: state.untrackedTabs, groupId: null };
+  return null;
 }
 
 export async function handleMessage(msg: Message): Promise<MessageResponse> {
@@ -70,12 +84,8 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await moveTab(msg);
       case 'removeTab':
         return await removeTab(msg);
-      case 'setTabPinned':
-        return await setTabPinned(msg);
       case 'activateLiveTab':
         return await activateLiveTab(msg);
-      case 'openSavedTab':
-        return await openSavedTab(msg);
       case 'closeLiveTab':
         return await closeLiveTab(msg);
       case 'addUrlToGroup':
@@ -86,8 +96,29 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await closeAllInGroup(msg);
       case 'newTabInGroup':
         return await newTabInGroup(msg);
+      case 'createStashFolder':
+        return await createStashFolder(msg);
+      case 'renameStashFolder':
+        return await renameStashFolder(msg);
+      case 'deleteStashFolder':
+        return await deleteStashFolder(msg);
+      case 'toggleStashFolderCollapsed':
+        return await toggleStashFolderCollapsed(msg);
+      case 'reorderStashFolders':
+        return await reorderStashFolders(msg);
+      case 'deleteStashItem':
+        return await deleteStashItem(msg);
+      case 'reorderStashItems':
+        return await reorderStashItems(msg);
+      case 'saveGroupToStash':
+        return await saveGroupToStash(msg);
+      case 'saveTabToStash':
+        return await saveTabToStash(msg);
+      case 'openStashItem':
+        return await openStashItem(msg);
+      case 'openStashFolderAsGroup':
+        return await openStashFolderAsGroup(msg);
       default: {
-        // Exhaustiveness check: adding a new Message variant must add a case here.
         const exhaustive: never = msg;
         return {
           ok: false,
@@ -100,67 +131,45 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
   }
 }
 
+// ---------- Per-window: groups & tabs ----------
+
 async function createGroup(msg: Extract<Message, { type: 'createGroup' }>): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
+  const name = validName(msg.name.trim() || 'New Group');
+  await withWindow(msg.chromeWindowId, (state) => {
+    if (state.groups.length >= MAX_GROUPS_PER_WINDOW) {
+      throw new Error(`too many groups (max ${MAX_GROUPS_PER_WINDOW})`);
+    }
     const group: Group = {
       id: uuid(),
-      // UI is the source of truth for the localized default. SW falls back
-      // to a neutral English string if (and only if) a caller ever sends
-      // an empty name — the current UI prevents that anyway.
-      name: msg.name.trim() || 'New Group',
+      name,
       collapsed: false,
       tabs: [],
       createdAt: Date.now(),
+      kind: 'manual',
     };
-    window.groups.push(group);
+    state.groups.push(group);
   });
   return { ok: true };
 }
 
 async function renameGroup(msg: Extract<Message, { type: 'renameGroup' }>): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const group = getGroup(window, msg.groupId);
+  const name = validName(msg.name);
+  await withWindow(msg.chromeWindowId, (state) => {
+    const group = findGroup(state, msg.groupId);
     if (!group) throw new Error(`group ${msg.groupId} not found`);
-    const trimmed = msg.name.trim();
-    if (!trimmed) throw new Error('name cannot be empty');
-    group.name = trimmed;
+    group.name = name;
   });
   return { ok: true };
 }
 
 async function deleteGroup(msg: Extract<Message, { type: 'deleteGroup' }>): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const idx = window.groups.findIndex((g) => g.id === msg.groupId);
+  await withWindow(msg.chromeWindowId, (state) => {
+    const idx = state.groups.findIndex((g) => g.id === msg.groupId);
     if (idx === -1) throw new Error(`group ${msg.groupId} not found`);
-    const [group] = window.groups.splice(idx, 1);
-
-    // Spec §6.9: live tabs move to untrackedTabs, saved tabs are discarded.
-    for (const tab of group.tabs) {
-      if (tab.chromeTabId !== null) {
-        window.untrackedTabs.push(tab);
-      }
-    }
-  });
-  return { ok: true };
-}
-
-async function setTabPinned(
-  msg: Extract<Message, { type: 'setTabPinned' }>,
-): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const group = getGroup(window, msg.groupId);
-    if (!group) throw new Error(`group ${msg.groupId} not found`);
-    const tab = group.tabs.find((t) => t.id === msg.tabRefId);
-    if (!tab) throw new Error(`tab ${msg.tabRefId} not found in group ${msg.groupId}`);
-    tab.pinned = msg.pinned;
+    const [group] = state.groups.splice(idx, 1);
+    // Live tabs go to untracked (don't close them); no saved tabs to discard
+    // in the new model.
+    for (const tab of group.tabs) state.untrackedTabs.push(tab);
   });
   return { ok: true };
 }
@@ -168,10 +177,8 @@ async function setTabPinned(
 async function toggleGroupCollapsed(
   msg: Extract<Message, { type: 'toggleGroupCollapsed' }>,
 ): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const group = getGroup(window, msg.groupId);
+  await withWindow(msg.chromeWindowId, (state) => {
+    const group = findGroup(state, msg.groupId);
     if (!group) throw new Error(`group ${msg.groupId} not found`);
     group.collapsed = msg.collapsed;
   });
@@ -181,11 +188,9 @@ async function toggleGroupCollapsed(
 async function reorderGroups(
   msg: Extract<Message, { type: 'reorderGroups' }>,
 ): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const byId = new Map(window.groups.map((g) => [g.id, g]));
-    if (msg.orderedIds.length !== window.groups.length) {
+  await withWindow(msg.chromeWindowId, (state) => {
+    const byId = new Map(state.groups.map((g) => [g.id, g]));
+    if (msg.orderedIds.length !== state.groups.length) {
       throw new Error('reorderGroups: id list length mismatch');
     }
     const next: Group[] = [];
@@ -194,39 +199,44 @@ async function reorderGroups(
       if (!g) throw new Error(`reorderGroups: group ${id} not found`);
       next.push(g);
     }
-    window.groups = next;
+    state.groups = next;
   });
   return { ok: true };
 }
 
 async function moveTab(msg: Extract<Message, { type: 'moveTab' }>): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const from = findContainer(window, msg.fromGroupId);
-    const to = findContainer(window, msg.toGroupId);
+  await withWindow(msg.chromeWindowId, (state) => {
+    const from = findContainer(state, msg.fromGroupId);
+    const to = findContainer(state, msg.toGroupId);
     if (!from) throw new Error(`source container ${msg.fromGroupId} not found`);
     if (!to) throw new Error(`target container ${msg.toGroupId} not found`);
+    // Only cap when moving INTO a group (not when reordering within the same
+    // group, and not when moving to untracked).
+    if (
+      msg.toGroupId !== null &&
+      msg.toGroupId !== msg.fromGroupId &&
+      to.length >= MAX_TABS_PER_GROUP
+    ) {
+      throw new Error(`group full (max ${MAX_TABS_PER_GROUP} tabs)`);
+    }
     const idx = from.findIndex((t) => t.id === msg.tabRefId);
     if (idx === -1) throw new Error(`tab ${msg.tabRefId} not found in source`);
     const [tab] = from.splice(idx, 1);
     const insertAt = Math.max(0, Math.min(msg.toIndex, to.length));
     to.splice(insertAt, 0, tab);
-    cleanupEmptyAutoGroups(window);
+    cleanupEmptyAutoGroups(state);
   });
   return { ok: true };
 }
 
 async function removeTab(msg: Extract<Message, { type: 'removeTab' }>): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const container = findContainer(window, msg.fromGroupId);
+  await withWindow(msg.chromeWindowId, (state) => {
+    const container = findContainer(state, msg.fromGroupId);
     if (!container) throw new Error(`container ${msg.fromGroupId} not found`);
     const idx = container.findIndex((t) => t.id === msg.tabRefId);
     if (idx === -1) throw new Error(`tab ${msg.tabRefId} not found`);
     container.splice(idx, 1);
-    cleanupEmptyAutoGroups(window);
+    cleanupEmptyAutoGroups(state);
   });
   return { ok: true };
 }
@@ -234,71 +244,25 @@ async function removeTab(msg: Extract<Message, { type: 'removeTab' }>): Promise<
 async function activateLiveTab(
   msg: Extract<Message, { type: 'activateLiveTab' }>,
 ): Promise<MessageResponse> {
-  const data = await getAppData();
-  const window = getWindow(data, msg.windowId);
-  if (!window) return { ok: false, error: 'window not found' };
-  const located = findTab(window, msg.tabRefId);
+  const data = await getSessionData();
+  const state = data.windows[msg.chromeWindowId];
+  if (!state) return { ok: false, error: 'window not found' };
+  const located = findTabRef(state, msg.tabRefId);
   if (!located) return { ok: false, error: 'tab not found' };
-  const chromeTabId = located.tab.chromeTabId;
-  if (chromeTabId === null) return { ok: false, error: 'tab is not live' };
-  await chrome.tabs.update(chromeTabId, { active: true });
-  if (window.chromeWindowId !== null) {
-    await chrome.windows.update(window.chromeWindowId, { focused: true });
-  }
-  return { ok: true };
-}
-
-async function openSavedTab(
-  msg: Extract<Message, { type: 'openSavedTab' }>,
-): Promise<MessageResponse> {
-  const data = await getAppData();
-  const window = getWindow(data, msg.windowId);
-  if (!window) return { ok: false, error: 'window not found' };
-  const located = findTab(window, msg.tabRefId);
-  if (!located) return { ok: false, error: 'tab not found' };
-  const url = located.tab.url;
-  if (!url) return { ok: false, error: 'tab has no URL' };
-  if (!isSafeNavigationUrl(url)) {
-    return { ok: false, error: `refusing to navigate to ${url}` };
-  }
-
-  await registerPendingOpen(url, msg.tabRefId);
-
-  switch (msg.behavior) {
-    case 'current-tab': {
-      const [activeTab] = await chrome.tabs.query({
-        active: true,
-        windowId: window.chromeWindowId ?? undefined,
-      });
-      if (activeTab?.id !== undefined) {
-        await chrome.tabs.update(activeTab.id, { url });
-      } else {
-        await chrome.tabs.create({ url, windowId: window.chromeWindowId ?? undefined });
-      }
-      break;
-    }
-    case 'new-tab':
-      await chrome.tabs.create({ url, windowId: window.chromeWindowId ?? undefined });
-      break;
-    case 'new-window':
-      await chrome.windows.create({ url });
-      break;
-  }
+  await chrome.tabs.update(located.tab.chromeTabId, { active: true });
+  await chrome.windows.update(msg.chromeWindowId, { focused: true });
   return { ok: true };
 }
 
 async function closeLiveTab(
   msg: Extract<Message, { type: 'closeLiveTab' }>,
 ): Promise<MessageResponse> {
-  const data = await getAppData();
-  const window = getWindow(data, msg.windowId);
-  if (!window) return { ok: false, error: 'window not found' };
-  const located = findTab(window, msg.tabRefId);
+  const data = await getSessionData();
+  const state = data.windows[msg.chromeWindowId];
+  if (!state) return { ok: false, error: 'window not found' };
+  const located = findTabRef(state, msg.tabRefId);
   if (!located) return { ok: false, error: 'tab not found' };
-  const chromeTabId = located.tab.chromeTabId;
-  if (chromeTabId === null) return { ok: false, error: 'tab is not live' };
-  // chrome.tabs.remove triggers onRemoved → handleTabRemoved → TabRef.chromeTabId becomes null.
-  await chrome.tabs.remove(chromeTabId);
+  await chrome.tabs.remove(located.tab.chromeTabId);
   return { ok: true };
 }
 
@@ -309,11 +273,10 @@ async function addUrlToGroup(
     return { ok: false, error: `refusing to add unsafe URL ${msg.url}` };
   }
 
-  // Resolve URL → chromeTabId by enumerating all tabs. chrome.tabs.query({url})
-  // requires a match-pattern; exact-URL matching is done in memory.
   let chromeTabId = msg.chromeTabId;
   let title = msg.title;
   let favIconUrl: string | undefined;
+
   if (chromeTabId === undefined) {
     const allTabs = await chrome.tabs.query({});
     const match = allTabs.find((t) => t.url === msg.url && t.id !== undefined);
@@ -324,22 +287,33 @@ async function addUrlToGroup(
     }
   }
 
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-    const group = getGroup(window, msg.groupId);
-    if (!group) throw new Error(`group ${msg.groupId} not found`);
+  if (chromeTabId === undefined) {
+    return { ok: false, error: 'could not locate Chrome tab for URL' };
+  }
+  const resolvedChromeTabId = chromeTabId;
 
-    // If a TabRef with this chromeTabId already exists, move it rather than
-    // duplicating.
-    if (chromeTabId !== undefined) {
-      const existing = findTabByChromeIdLocal(window, chromeTabId);
-      if (existing) {
-        const idx = existing.container.indexOf(existing.tab);
-        existing.container.splice(idx, 1);
-        group.tabs.push(existing.tab);
+  await withWindow(msg.chromeWindowId, (state) => {
+    const group = findGroup(state, msg.groupId);
+    if (!group) throw new Error(`group ${msg.groupId} not found`);
+    if (group.tabs.length >= MAX_TABS_PER_GROUP) {
+      throw new Error(`group full (max ${MAX_TABS_PER_GROUP} tabs)`);
+    }
+
+    // If a TabRef already tracks this chromeTabId, move it instead of duplicating.
+    for (const g of state.groups) {
+      const idx = g.tabs.findIndex((t) => t.chromeTabId === resolvedChromeTabId);
+      if (idx !== -1) {
+        const [tab] = g.tabs.splice(idx, 1);
+        group.tabs.push(tab);
+        cleanupEmptyAutoGroups(state);
         return;
       }
+    }
+    const idx = state.untrackedTabs.findIndex((t) => t.chromeTabId === resolvedChromeTabId);
+    if (idx !== -1) {
+      const [tab] = state.untrackedTabs.splice(idx, 1);
+      group.tabs.push(tab);
+      return;
     }
 
     const newRef: TabRef = {
@@ -347,7 +321,7 @@ async function addUrlToGroup(
       url: msg.url,
       title: title ?? msg.url,
       favIconUrl,
-      chromeTabId: chromeTabId ?? null,
+      chromeTabId: resolvedChromeTabId,
       addedAt: Date.now(),
     };
     group.tabs.push(newRef);
@@ -358,22 +332,17 @@ async function addUrlToGroup(
 async function autoGroupByDomain(
   msg: Extract<Message, { type: 'autoGroupByDomain' }>,
 ): Promise<MessageResponse> {
-  await withAppData((data) => {
-    const window = getWindow(data, msg.windowId);
-    if (!window) throw new Error(`window ${msg.windowId} not found`);
-
-    // Index existing auto-domain groups by their domain key for O(1) merge.
+  await withWindow(msg.chromeWindowId, (state) => {
     const autoByDomain = new Map<string, Group>();
-    for (const g of window.groups) {
+    for (const g of state.groups) {
       if (g.kind === 'auto-domain' && g.autoDomain) {
         autoByDomain.set(g.autoDomain, g);
       }
     }
 
-    // Bucket untrackedTabs by domain; ungroupable tabs stay behind.
     const remaining: TabRef[] = [];
     const buckets = new Map<string, TabRef[]>();
-    for (const tab of window.untrackedTabs) {
+    for (const tab of state.untrackedTabs) {
       const domain = extractGroupingDomain(tab.url);
       if (!domain) {
         remaining.push(tab);
@@ -383,12 +352,8 @@ async function autoGroupByDomain(
       if (list) list.push(tab);
       else buckets.set(domain, [tab]);
     }
-    window.untrackedTabs = remaining;
+    state.untrackedTabs = remaining;
 
-    // For each domain bucket, merge into an existing auto-domain group or
-    // create a new one. New groups get a brand-prefixed name when the bucket
-    // titles agree on one; existing groups keep their current name so user
-    // renames (and the initial inference) stay stable across merges.
     for (const [domain, tabs] of buckets) {
       let group = autoByDomain.get(domain);
       if (!group) {
@@ -401,10 +366,9 @@ async function autoGroupByDomain(
           kind: 'auto-domain',
           autoDomain: domain,
         };
-        window.groups.push(group);
+        state.groups.push(group);
         autoByDomain.set(domain, group);
       }
-      // Append (preserving relative order from untrackedTabs).
       for (const tab of tabs) group.tabs.push(tab);
     }
   });
@@ -414,28 +378,21 @@ async function autoGroupByDomain(
 async function closeAllInGroup(
   msg: Extract<Message, { type: 'closeAllInGroup' }>,
 ): Promise<MessageResponse> {
-  const data = await getAppData();
-  const window = getWindow(data, msg.windowId);
-  if (!window) return { ok: false, error: 'window not found' };
+  const data = await getSessionData();
+  const state = data.windows[msg.chromeWindowId];
+  if (!state) return { ok: false, error: 'window not found' };
 
   let container: TabRef[];
   if (msg.groupId === null) {
-    container = window.untrackedTabs;
+    container = state.untrackedTabs;
   } else {
-    const group = getGroup(window, msg.groupId);
+    const group = findGroup(state, msg.groupId);
     if (!group) return { ok: false, error: 'group not found' };
     container = group.tabs;
   }
 
-  const liveTabIds = container
-    .filter((t): t is TabRef & { chromeTabId: number } => t.chromeTabId !== null)
-    .map((t) => t.chromeTabId);
-
+  const liveTabIds = container.map((t) => t.chromeTabId);
   if (liveTabIds.length === 0) return { ok: true };
-
-  // chrome.tabs.remove triggers onRemoved → handleTabRemoved, which applies
-  // pin policy: pinned items become saved, unpinned items drop from the group.
-  // Untracked items always drop.
   await chrome.tabs.remove(liveTabIds);
   return { ok: true };
 }
@@ -443,43 +400,304 @@ async function closeAllInGroup(
 async function newTabInGroup(
   msg: Extract<Message, { type: 'newTabInGroup' }>,
 ): Promise<MessageResponse> {
-  // Validate target up-front.
-  const data = await getAppData();
-  const win = getWindow(data, msg.windowId);
-  if (!win) return { ok: false, error: 'window not found' };
-  if (win.chromeWindowId === null) return { ok: false, error: 'window has no chromeWindowId' };
-  if (!getGroup(win, msg.groupId)) return { ok: false, error: 'group not found' };
+  const data = await getSessionData();
+  const state = data.windows[msg.chromeWindowId];
+  if (!state) return { ok: false, error: 'window not found' };
+  if (!findGroup(state, msg.groupId)) return { ok: false, error: 'group not found' };
 
-  // Synchronously claim the next-new-tab slot in this Chrome window so
-  // handleTabCreated routes the TabRef into the target group directly. This
-  // sidesteps the race between chrome.tabs.create's Promise and the
-  // onCreated event dispatch.
-  reserveNewTabRoute(win.chromeWindowId, msg.groupId);
-
-  await chrome.tabs.create({
-    windowId: win.chromeWindowId,
-    active: true,
-  });
-
-  // As a safety net (e.g., onCreated didn't consume the route because some
-  // other tab in this window won the race), reconcile by scanning untracked
-  // for the created tab and moving it. We don't know chromeTabId yet — but
-  // any TabRef whose chromeTabId now matches a tab in this window and which
-  // is currently in untrackedTabs while our requested group still exists
-  // could be the one. To avoid mis-moving an unrelated tab, only reconcile
-  // when the route is still set (i.e., wasn't consumed).
+  reservePendingTabRoute(msg.chromeWindowId, msg.groupId, 1);
+  await chrome.tabs.create({ windowId: msg.chromeWindowId, active: true });
   return { ok: true };
 }
 
-function findTabByChromeIdLocal(
-  window: WindowState,
-  chromeTabId: number,
-): { tab: TabRef; container: TabRef[] } | null {
-  for (const g of window.groups) {
-    const t = g.tabs.find((t) => t.chromeTabId === chromeTabId);
-    if (t) return { tab: t, container: g.tabs };
+// ---------- Stash ----------
+
+async function createStashFolder(
+  msg: Extract<Message, { type: 'createStashFolder' }>,
+): Promise<MessageResponse> {
+  const name = validName(msg.name.trim() || DEFAULT_STASH_FOLDER_NAME);
+  await withAppData((data) => {
+    if (data.stash.length >= MAX_STASH_FOLDERS) {
+      throw new Error(`too many stash folders (max ${MAX_STASH_FOLDERS})`);
+    }
+    data.stash.push({
+      id: uuid(),
+      name,
+      collapsed: false,
+      items: [],
+      createdAt: Date.now(),
+    });
+  });
+  return { ok: true };
+}
+
+async function renameStashFolder(
+  msg: Extract<Message, { type: 'renameStashFolder' }>,
+): Promise<MessageResponse> {
+  const name = validName(msg.name);
+  await withAppData((data) => {
+    const folder = data.stash.find((f) => f.id === msg.folderId);
+    if (!folder) throw new Error(`stash folder ${msg.folderId} not found`);
+    folder.name = name;
+  });
+  return { ok: true };
+}
+
+async function deleteStashFolder(
+  msg: Extract<Message, { type: 'deleteStashFolder' }>,
+): Promise<MessageResponse> {
+  await withAppData((data) => {
+    data.stash = data.stash.filter((f) => f.id !== msg.folderId);
+  });
+  return { ok: true };
+}
+
+async function toggleStashFolderCollapsed(
+  msg: Extract<Message, { type: 'toggleStashFolderCollapsed' }>,
+): Promise<MessageResponse> {
+  await withAppData((data) => {
+    const folder = data.stash.find((f) => f.id === msg.folderId);
+    if (!folder) throw new Error(`stash folder ${msg.folderId} not found`);
+    folder.collapsed = msg.collapsed;
+  });
+  return { ok: true };
+}
+
+async function reorderStashFolders(
+  msg: Extract<Message, { type: 'reorderStashFolders' }>,
+): Promise<MessageResponse> {
+  await withAppData((data) => {
+    const byId = new Map(data.stash.map((f) => [f.id, f]));
+    if (msg.orderedIds.length !== data.stash.length) {
+      throw new Error('reorderStashFolders: id list length mismatch');
+    }
+    const next: StashFolder[] = [];
+    for (const id of msg.orderedIds) {
+      const f = byId.get(id);
+      if (!f) throw new Error(`reorderStashFolders: folder ${id} not found`);
+      next.push(f);
+    }
+    data.stash = next;
+  });
+  return { ok: true };
+}
+
+async function deleteStashItem(
+  msg: Extract<Message, { type: 'deleteStashItem' }>,
+): Promise<MessageResponse> {
+  await withAppData((data) => {
+    const folder = data.stash.find((f) => f.id === msg.folderId);
+    if (!folder) throw new Error(`stash folder ${msg.folderId} not found`);
+    folder.items = folder.items.filter((i) => i.id !== msg.itemId);
+  });
+  return { ok: true };
+}
+
+async function reorderStashItems(
+  msg: Extract<Message, { type: 'reorderStashItems' }>,
+): Promise<MessageResponse> {
+  await withAppData((data) => {
+    const folder = data.stash.find((f) => f.id === msg.folderId);
+    if (!folder) throw new Error(`stash folder ${msg.folderId} not found`);
+    const byId = new Map(folder.items.map((i) => [i.id, i]));
+    if (msg.orderedIds.length !== folder.items.length) {
+      throw new Error('reorderStashItems: id list length mismatch');
+    }
+    const next: StashItem[] = [];
+    for (const id of msg.orderedIds) {
+      const item = byId.get(id);
+      if (!item) throw new Error(`reorderStashItems: item ${id} not found`);
+      next.push(item);
+    }
+    folder.items = next;
+  });
+  return { ok: true };
+}
+
+async function saveGroupToStash(
+  msg: Extract<Message, { type: 'saveGroupToStash' }>,
+): Promise<MessageResponse> {
+  // 1. Snapshot the group from session storage.
+  const captured: { folder: StashFolder | null } = { folder: null };
+  await withSessionData((data) => {
+    const state = data.windows[msg.chromeWindowId];
+    if (!state) return;
+    const group = state.groups.find((g) => g.id === msg.groupId);
+    if (!group) return;
+    captured.folder = {
+      id: uuid(),
+      name: group.name,
+      collapsed: false,
+      items: group.tabs.map((t) => ({
+        id: uuid(),
+        url: t.url,
+        title: t.title,
+        favIconUrl: t.favIconUrl,
+        addedAt: Date.now(),
+      })),
+      createdAt: Date.now(),
+    };
+  });
+
+  if (!captured.folder) {
+    return { ok: false, error: 'group or window not found' };
   }
-  const t = window.untrackedTabs.find((t) => t.chromeTabId === chromeTabId);
-  if (t) return { tab: t, container: window.untrackedTabs };
-  return null;
+  const newFolder = captured.folder;
+
+  // 2. Append to Stash.
+  await withAppData((data) => {
+    if (data.stash.length >= MAX_STASH_FOLDERS) {
+      throw new Error(`too many stash folders (max ${MAX_STASH_FOLDERS})`);
+    }
+    data.stash.push(newFolder);
+  });
+  return { ok: true };
+}
+
+async function saveTabToStash(
+  msg: Extract<Message, { type: 'saveTabToStash' }>,
+): Promise<MessageResponse> {
+  // 1. Snapshot the tab.
+  const captured: { item: StashItem | null } = { item: null };
+  await withSessionData((data) => {
+    const state = data.windows[msg.chromeWindowId];
+    if (!state) return;
+    const container =
+      msg.fromGroupId === null
+        ? state.untrackedTabs
+        : state.groups.find((g) => g.id === msg.fromGroupId)?.tabs;
+    if (!container) return;
+    const tab = container.find((t) => t.id === msg.tabRefId);
+    if (!tab) return;
+    captured.item = {
+      id: uuid(),
+      url: tab.url,
+      title: tab.title,
+      favIconUrl: tab.favIconUrl,
+      addedAt: Date.now(),
+    };
+  });
+
+  if (!captured.item) {
+    return { ok: false, error: 'tab not found' };
+  }
+  const newItem = captured.item;
+
+  // 2. Append to target folder (find existing, or create "Unsorted").
+  await withAppData((data) => {
+    let folder: StashFolder | undefined;
+    if (msg.targetFolderId) {
+      folder = data.stash.find((f) => f.id === msg.targetFolderId);
+      if (!folder) throw new Error(`stash folder ${msg.targetFolderId} not found`);
+    } else {
+      folder = data.stash.find((f) => f.name === DEFAULT_STASH_FOLDER_NAME);
+      if (!folder) {
+        if (data.stash.length >= MAX_STASH_FOLDERS) {
+          throw new Error(`too many stash folders (max ${MAX_STASH_FOLDERS})`);
+        }
+        folder = {
+          id: uuid(),
+          name: DEFAULT_STASH_FOLDER_NAME,
+          collapsed: false,
+          items: [],
+          createdAt: Date.now(),
+        };
+        data.stash.push(folder);
+      }
+    }
+    if (folder.items.length >= MAX_STASH_ITEMS_PER_FOLDER) {
+      throw new Error(`folder full (max ${MAX_STASH_ITEMS_PER_FOLDER} items)`);
+    }
+    folder.items.push(newItem);
+  });
+  return { ok: true };
+}
+
+async function openStashItem(
+  msg: Extract<Message, { type: 'openStashItem' }>,
+): Promise<MessageResponse> {
+  const data = await getAppData();
+  let target: StashItem | null = null;
+  for (const folder of data.stash) {
+    const item = folder.items.find((i) => i.id === msg.itemId);
+    if (item) {
+      target = item;
+      break;
+    }
+  }
+  if (!target) return { ok: false, error: 'stash item not found' };
+  if (!isSafeNavigationUrl(target.url)) {
+    return { ok: false, error: `refusing to navigate to ${target.url}` };
+  }
+
+  switch (msg.behavior) {
+    case 'current-tab': {
+      const [activeTab] = await chrome.tabs.query({
+        active: true,
+        windowId: msg.chromeWindowId,
+      });
+      if (activeTab?.id !== undefined) {
+        // chrome.tabs.update can reject when the active tab is a chrome://
+        // page or another restricted URL. Fall back to opening a new tab so
+        // the user still gets their bookmarked URL.
+        try {
+          await chrome.tabs.update(activeTab.id, { url: target.url });
+        } catch {
+          await chrome.tabs.create({ url: target.url, windowId: msg.chromeWindowId });
+        }
+      } else {
+        await chrome.tabs.create({ url: target.url, windowId: msg.chromeWindowId });
+      }
+      break;
+    }
+    case 'new-tab':
+      await chrome.tabs.create({ url: target.url, windowId: msg.chromeWindowId });
+      break;
+    case 'new-window':
+      await chrome.windows.create({ url: target.url });
+      break;
+  }
+  return { ok: true };
+}
+
+async function openStashFolderAsGroup(
+  msg: Extract<Message, { type: 'openStashFolderAsGroup' }>,
+): Promise<MessageResponse> {
+  // 1. Read the folder.
+  const data = await getAppData();
+  const folder = data.stash.find((f) => f.id === msg.folderId);
+  if (!folder) return { ok: false, error: 'stash folder not found' };
+
+  // Clamp how many tabs we'll open at once to avoid melting the user's
+  // session on a huge folder.
+  const safeItems = folder.items
+    .filter((i) => isSafeNavigationUrl(i.url))
+    .slice(0, MAX_STASH_OPEN_AT_ONCE);
+  if (safeItems.length === 0) return { ok: false, error: 'no openable items in folder' };
+
+  // 2. Create new manual group in target window.
+  const newGroupId = uuid();
+  await withWindow(msg.targetChromeWindowId, (state) => {
+    state.groups.push({
+      id: newGroupId,
+      name: folder.name,
+      collapsed: false,
+      tabs: [],
+      createdAt: Date.now(),
+      kind: 'manual',
+    });
+  });
+
+  // 3. Reserve N route slots so subsequent onCreated events route into the group.
+  reservePendingTabRoute(msg.targetChromeWindowId, newGroupId, safeItems.length);
+
+  // 4. Open every item. Don't wait for full load; just kick off create().
+  for (const item of safeItems) {
+    await chrome.tabs.create({
+      url: item.url,
+      windowId: msg.targetChromeWindowId,
+      active: false,
+    });
+  }
+  return { ok: true };
 }

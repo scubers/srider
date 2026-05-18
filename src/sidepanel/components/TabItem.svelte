@@ -9,10 +9,10 @@
   import type { TabRef, WindowState } from '$shared/types';
   import { sendMessage } from '$shared/messages';
   import { t } from '$shared/i18n/index.svelte';
-  import { settingsStore } from '$shared/stores.svelte';
   import { extractGroupingDomain } from '$shared/url';
   import { makeTabDragData, makeTabDropData } from '../dnd';
   import { activeTabStore } from '../active-tab.svelte';
+  import { runSaveAnimation } from '../save-animation';
   import Favicon from './Favicon.svelte';
   import { searchStore } from '../search.svelte';
   import { splitHighlight } from '../highlight';
@@ -22,10 +22,9 @@
     groupId,
     window: win,
     /**
-     * 'dot' inside auto-domain groups (the card header already shows the
-     * domain favicon, so each row gets a small placeholder). 'favicon'
-     * everywhere else (manual groups, untracked) — each row shows the page's
-     * own favicon with a colored-letter fallback.
+     * 'dot' inside auto-domain groups (header already shows the domain
+     * favicon, so each row gets a small placeholder). 'favicon' everywhere
+     * else.
      */
     iconVariant = 'favicon',
   }: {
@@ -39,12 +38,7 @@
   let hoverEdge: Edge | null = $state(null);
   let isDragging = $state(false);
 
-  const isLive = $derived(tab.chromeTabId !== null);
-  const isActive = $derived(
-    tab.chromeTabId !== null && tab.chromeTabId === activeTabStore.chromeTabId,
-  );
-  const isPinned = $derived(tab.pinned === true);
-  const canPin = $derived(groupId !== null);
+  const isActive = $derived(tab.chromeTabId === activeTabStore.chromeTabId);
   const host = $derived(extractGroupingDomain(tab.url) ?? tab.url ?? '?');
   const displayTitle = $derived(tab.title || tab.url);
   const titleSegments = $derived(splitHighlight(displayTitle, searchStore.normalized));
@@ -81,42 +75,35 @@
   });
 
   async function onActivate() {
-    if (isLive) {
-      await sendMessage({ type: 'activateLiveTab', windowId: win.id, tabRefId: tab.id });
-    } else {
-      await sendMessage({
-        type: 'openSavedTab',
-        windowId: win.id,
-        tabRefId: tab.id,
-        behavior: settingsStore.value.savedTabClickBehavior,
-      });
-    }
+    await sendMessage({
+      type: 'activateLiveTab',
+      chromeWindowId: win.chromeWindowId,
+      tabRefId: tab.id,
+    });
   }
 
   async function onRemove(e: MouseEvent) {
     e.stopPropagation();
-    if (isLive) {
-      await sendMessage({ type: 'closeLiveTab', windowId: win.id, tabRefId: tab.id });
-    } else {
-      await sendMessage({
-        type: 'removeTab',
-        windowId: win.id,
-        tabRefId: tab.id,
-        fromGroupId: groupId,
-      });
-    }
+    await sendMessage({
+      type: 'closeLiveTab',
+      chromeWindowId: win.chromeWindowId,
+      tabRefId: tab.id,
+    });
   }
 
-  async function togglePin(e: MouseEvent) {
+  async function onSaveToStash(e: MouseEvent) {
     e.stopPropagation();
-    if (groupId === null) return;
-    await sendMessage({
-      type: 'setTabPinned',
-      windowId: win.id,
+    if (!rootEl) return;
+    const sourceRect = rootEl.getBoundingClientRect();
+    const response = await sendMessage({
+      type: 'saveTabToStash',
+      chromeWindowId: win.chromeWindowId,
       tabRefId: tab.id,
-      groupId,
-      pinned: !isPinned,
+      fromGroupId: groupId,
     });
+    if (response.ok) {
+      runSaveAnimation({ sourceRect });
+    }
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -131,10 +118,7 @@
 <div
   bind:this={rootEl}
   class="tab"
-  class:live={isLive}
-  class:saved={!isLive}
   class:active={isActive}
-  class:pinned={isPinned}
   class:dragging={isDragging}
   class:edge-top={hoverEdge === 'top'}
   class:edge-bottom={hoverEdge === 'bottom'}
@@ -160,29 +144,28 @@
     {/each}
   </span>
 
-  {#if canPin}
-    <button
-      class="pin"
-      onclick={togglePin}
-      title={isPinned ? t('tab.unpin_title') : t('tab.pin_title')}
-      aria-label={isPinned ? t('tab.unpin_aria') : t('tab.pin_aria')}
-      aria-pressed={isPinned}
-    >
-      <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-        {#if isPinned}
-          <path fill="currentColor" d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"/>
-        {:else}
-          <path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M9.5 1.5 14 6l-3 1-1 3-3-3-4 4v-1l3-3-3-3 3-1 1-3z"/>
-        {/if}
-      </svg>
-    </button>
-  {/if}
+  <button
+    class="save"
+    onclick={onSaveToStash}
+    title={t('tab.save_to_stash_title')}
+    aria-label={t('tab.save_to_stash_aria')}
+  >
+    <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linejoin="round"
+        d="m8 1.5 1.95 4.2 4.55.5-3.4 3.1.95 4.5L8 11.6 3.95 13.8l.95-4.5L1.5 6.2l4.55-.5z"
+      />
+    </svg>
+  </button>
 
   <button
     class="remove"
     onclick={onRemove}
-    title={isLive ? t('tab.close_live_title') : t('tab.remove_saved_title')}
-    aria-label={isLive ? t('tab.close_live_title') : t('tab.remove_saved_title')}
+    title={t('tab.close_live_title')}
+    aria-label={t('tab.close_live_title')}
   >×</button>
 </div>
 
@@ -209,11 +192,6 @@
     outline-offset: -2px;
   }
 
-  .tab.saved {
-    color: var(--text-mute);
-  }
-
-  /* Active = accent-tinted soft background, bold text; no border, no left bar. */
   .tab.active {
     background: var(--accent-bg-soft);
     color: var(--text);
@@ -288,15 +266,12 @@
     font: inherit;
   }
 
-  /* Active row already paints itself with --accent-bg-soft, so the default
-     mark background blends in. Use the solid accent for high-contrast
-     highlight on active rows. */
   .tab.active .title mark {
     background: var(--accent);
     color: #fff;
   }
 
-  .pin,
+  .save,
   .remove {
     flex: 0 0 16px;
     width: 16px;
@@ -312,19 +287,14 @@
     transition: opacity 80ms, background 80ms, color 80ms;
   }
 
-  .tab.pinned .pin {
-    opacity: 1;
-    color: var(--accent);
-  }
-
-  .tab:hover .pin,
-  .tab:focus-within .pin,
+  .tab:hover .save,
+  .tab:focus-within .save,
   .tab:hover .remove,
   .tab:focus-within .remove {
     opacity: 1;
   }
 
-  .pin:hover {
+  .save:hover {
     background: var(--surface);
     color: var(--accent);
   }

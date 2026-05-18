@@ -1,12 +1,17 @@
 <script lang="ts">
-  import { appDataStore, settingsStore } from '$shared/stores.svelte';
+  import {
+    appDataStore,
+    sessionDataStore,
+    settingsStore,
+    viewStore,
+  } from '$shared/stores.svelte';
   import { applyTheme, watchSystemTheme } from '$shared/theme';
   import { sendMessage } from '$shared/messages';
   import Header from './components/Header.svelte';
+  import Switcher from './components/Switcher.svelte';
   import StatsBar from './components/StatsBar.svelte';
-  import GroupList from './components/GroupList.svelte';
-  import UntrackedSection from './components/UntrackedSection.svelte';
-  import EmptyState from './components/EmptyState.svelte';
+  import TabsView from './components/TabsView.svelte';
+  import StashView from './components/StashView.svelte';
   import { setupGlobalDnD } from './dnd';
   import { activeTabStore } from './active-tab.svelte';
   import { searchStore } from './search.svelte';
@@ -17,19 +22,26 @@
   let windowState = $derived<WindowState | null>(
     chromeWindowId === null
       ? null
-      : Object.values(appDataStore.data.windows).find(
-          (w) => w.chromeWindowId === chromeWindowId,
-        ) ?? null,
+      : sessionDataStore.data.windows[chromeWindowId] ?? null,
+  );
+  let allLoaded = $derived(
+    appDataStore.loaded &&
+      sessionDataStore.loaded &&
+      settingsStore.loaded &&
+      chromeWindowId !== null,
   );
 
-  // Lifecycle: initialize stores, resolve current window, install DnD monitor.
   $effect(() => {
     let unwatchTheme: (() => void) | null = null;
     let unwatchDnd: (() => void) | null = null;
     let cancelled = false;
 
     (async () => {
-      await Promise.all([appDataStore.init(), settingsStore.init()]);
+      await Promise.all([
+        appDataStore.init(),
+        sessionDataStore.init(),
+        settingsStore.init(),
+      ]);
       if (cancelled) return;
 
       const w = await chrome.windows.getCurrent();
@@ -53,25 +65,19 @@
       unwatchDnd?.();
       activeTabStore.destroy();
       appDataStore.destroy();
+      sessionDataStore.destroy();
       settingsStore.destroy();
     };
   });
 
-  // Re-apply theme whenever it changes in settings.
   $effect(() => {
     if (settingsStore.loaded) applyTheme(settingsStore.value.theme);
   });
 
   /**
-   * Follow the active Chrome tab: when the user actually switches tabs,
-   * expand the new tab's group if it's collapsed and scroll the row into
-   * view. The expand/scroll fires ONLY on real tab switches — if the user
-   * later collapses the active tab's group manually, we leave it collapsed.
-   *
-   * The effect inevitably re-runs whenever anything reactive it reads
-   * changes (group.collapsed, group.tabs, etc.), so we guard with
-   * lastHandledTabId: any re-run where chromeTabId is unchanged is a no-op
-   * EXCEPT for finishing a pending scroll that was queued behind an expand.
+   * Active-tab follow: when the user switches Chrome tabs, expand its group
+   * (only on real tab switches; respects manual collapses afterward) and
+   * scroll the row into view. Only meaningful in Tabs view.
    */
   let lastHandledTabId: number | null = null;
   let pendingScrollTabRefId: string | null = null;
@@ -86,12 +92,9 @@
   }
 
   $effect(() => {
+    if (viewStore.mode !== 'tabs') return;
     const activeChromeTabId = activeTabStore.chromeTabId;
     if (activeChromeTabId === null) return;
-    // During search the card is force-expanded by Group.svelte without
-    // touching storage; if we sent toggleGroupCollapsed(false) from here it
-    // would persist the unwanted expand and the card would stay open after
-    // clearing the search. Skip until search is over.
     if (searchStore.active) return;
     const w = windowState;
     if (!w) return;
@@ -117,12 +120,10 @@
     if (tabChanged) {
       lastHandledTabId = activeChromeTabId;
       if (collapsedGroupId !== null) {
-        // Auto-expand on switch and defer scrolling until the next effect
-        // run sees the group expanded.
         pendingScrollTabRefId = foundTabRefId;
         void sendMessage({
           type: 'toggleGroupCollapsed',
-          windowId: w.id,
+          chromeWindowId: w.chromeWindowId,
           groupId: collapsedGroupId,
           collapsed: false,
         });
@@ -133,9 +134,6 @@
       return;
     }
 
-    // Tab unchanged: only act if we still owe a scroll to the same row and
-    // its group is now expanded. Anything else (user manually collapsing
-    // this card, an unrelated reactive change) is left alone.
     if (
       pendingScrollTabRefId === foundTabRefId &&
       collapsedGroupId === null
@@ -147,21 +145,21 @@
 </script>
 
 <div class="app">
-  {#if !appDataStore.loaded || !settingsStore.loaded || chromeWindowId === null}
+  {#if !allLoaded}
     <div class="loading">{t('app.loading')}</div>
-  {:else if !windowState}
-    <div class="loading">{t('app.matching_window')}</div>
   {:else}
     <Header window={windowState} />
+    <Switcher />
     <StatsBar window={windowState} />
     <main class="content">
-      {#if windowState.groups.length === 0 && windowState.untrackedTabs.length === 0}
-        <EmptyState />
-      {:else}
-        <GroupList window={windowState} />
-        {#if windowState.untrackedTabs.length > 0}
-          <UntrackedSection window={windowState} />
+      {#if viewStore.mode === 'tabs'}
+        {#if windowState}
+          <TabsView window={windowState} />
+        {:else}
+          <div class="loading">{t('app.loading')}</div>
         {/if}
+      {:else}
+        <StashView chromeWindowId={chromeWindowId!} />
       {/if}
     </main>
   {/if}

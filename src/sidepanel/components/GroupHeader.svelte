@@ -3,6 +3,7 @@
   import { sendMessage } from '$shared/messages';
   import { t } from '$shared/i18n/index.svelte';
   import { searchStore } from '../search.svelte';
+  import { runSaveAnimation } from '../save-animation';
   import Favicon from './Favicon.svelte';
   import RenameInput from './RenameInput.svelte';
 
@@ -17,8 +18,6 @@
   } = $props();
 
   const isAuto = $derived(group.kind === 'auto-domain');
-  /** Mirror of Group.svelte: search force-expands the card. Used so the
-      caret rotation and aria-expanded reflect what the user actually sees. */
   const effectiveCollapsed = $derived(searchStore.active ? false : group.collapsed);
   const groupIcon = $derived.by(() => {
     if (!isAuto) return null;
@@ -29,6 +28,7 @@
   });
   const totalCount = $derived(group.tabs.length);
 
+  let rootEl: HTMLDivElement | undefined = $state();
   let renaming = $state(false);
   let menuOpen = $state(false);
   let menuEl: HTMLDivElement | undefined = $state();
@@ -36,8 +36,8 @@
   let menuPopupEl: HTMLDivElement | undefined = $state();
   let menuPos = $state<{ left: number; top: number } | null>(null);
 
-  const APPROX_MENU_WIDTH = 160;
-  const APPROX_MENU_HEIGHT = 108;
+  const APPROX_MENU_WIDTH = 180;
+  const APPROX_MENU_HEIGHT = 140;
 
   function computeMenuPos(): void {
     if (!menuBtnEl) return;
@@ -105,35 +105,65 @@
   async function commitRename(name: string) {
     renaming = false;
     if (!name || name === group.name) return;
-    await sendMessage({ type: 'renameGroup', windowId: win.id, groupId: group.id, name });
+    await sendMessage({
+      type: 'renameGroup',
+      chromeWindowId: win.chromeWindowId,
+      groupId: group.id,
+      name,
+    });
   }
 
   async function deleteGroup() {
     menuOpen = false;
     if (!confirm(t('group.confirm_delete', { name: group.name }))) return;
-    await sendMessage({ type: 'deleteGroup', windowId: win.id, groupId: group.id });
+    await sendMessage({
+      type: 'deleteGroup',
+      chromeWindowId: win.chromeWindowId,
+      groupId: group.id,
+    });
   }
 
-  /** Count of live (open) Chrome tabs in this group, used by close-all UX. */
-  const liveCount = $derived(group.tabs.filter((t) => t.chromeTabId !== null).length);
+  const liveCount = $derived(group.tabs.length);
 
   async function closeAll() {
     menuOpen = false;
     if (liveCount === 0) return;
     if (!confirm(t('group.confirm_close_all', { name: group.name, count: liveCount }))) return;
-    await sendMessage({ type: 'closeAllInGroup', windowId: win.id, groupId: group.id });
+    await sendMessage({
+      type: 'closeAllInGroup',
+      chromeWindowId: win.chromeWindowId,
+      groupId: group.id,
+    });
+  }
+
+  async function saveToStash() {
+    menuOpen = false;
+    if (!rootEl) return;
+    const sourceRect = rootEl.getBoundingClientRect();
+    const response = await sendMessage({
+      type: 'saveGroupToStash',
+      chromeWindowId: win.chromeWindowId,
+      groupId: group.id,
+    });
+    if (response.ok) {
+      runSaveAnimation({ sourceRect });
+    }
   }
 
   async function addNewTab(e: MouseEvent) {
     e.stopPropagation();
-    await sendMessage({ type: 'newTabInGroup', windowId: win.id, groupId: group.id });
+    await sendMessage({
+      type: 'newTabInGroup',
+      chromeWindowId: win.chromeWindowId,
+      groupId: group.id,
+    });
   }
 
-  /** Display host for auto-domain favicon fallback letter. */
   const iconHost = $derived(group.autoDomain ?? group.name);
 </script>
 
 <div
+  bind:this={rootEl}
   class="header"
   role="button"
   tabindex="0"
@@ -186,6 +216,7 @@
     style:top="{menuPos.top}px"
   >
     <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>{t('group.menu_rename')}</button>
+    <button role="menuitem" onclick={saveToStash}>{t('group.menu_save_to_stash')}</button>
     <button role="menuitem" disabled={liveCount === 0} onclick={closeAll}>
       {t('group.menu_close_all')} <span class="count-hint">({liveCount})</span>
     </button>
@@ -306,8 +337,8 @@
 
   .menu {
     position: fixed;
-    min-width: 140px;
-    max-width: 200px;
+    min-width: 160px;
+    max-width: 220px;
     background: var(--bg-raised);
     border: 1px solid var(--border);
     border-radius: 6px;

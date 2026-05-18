@@ -1,34 +1,42 @@
 /**
- * Core data types for Srider. See docs/superpowers/specs/2026-05-16-side-tab-extension-design.md §4.
+ * Core data types for Side Tab. See docs/superpowers/specs/2026-05-19-side-tab-redesign-design.md.
  *
- * All persisted state lives under three storage keys:
- *   - chrome.storage.local  → AppData (groups, tabs, window states)
- *   - chrome.storage.sync   → Settings
- *   - chrome.storage.session → SessionState (pendingOpens, windowBuffers)
+ * Storage split:
+ *   - chrome.storage.local   → AppData (Stash only — the persistent layer)
+ *   - chrome.storage.session → SessionData (per-window state keyed by chromeWindowId;
+ *                              survives SW recycling, lost on browser restart)
+ *   - chrome.storage.sync    → Settings (cross-device sync)
+ *
+ * The previous UUID + Jaccard window-matching mechanism is gone. Windows are
+ * referenced by Chrome's own `chromeWindowId` (a number) for the duration of
+ * the browser session. To persist anything across browser restart, the user
+ * saves it to Stash.
  */
 
-export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION = 2 as const;
 
-export type WindowUUID = string;
+export type ChromeWindowId = number;
+export type ChromeTabId = number;
+
 export type GroupId = string;
 export type TabRefId = string;
+export type StashFolderId = string;
+export type StashItemId = string;
 
-/** A reference to a tab. `chromeTabId` is null when the tab is closed (saved). */
+/**
+ * A live tab inside a per-window Group or untrackedTabs.
+ * Always live (chromeTabId always set). When the underlying Chrome tab closes,
+ * the TabRef is deleted from its container — there is no "saved" state.
+ * Persistent storage of URL snapshots lives in Stash.
+ */
 export interface TabRef {
-  /** Stable UUID. Survives session restore. NOT the Chrome tabId. */
+  /** Stable UUID for this TabRef. Survives URL navigation; new each Chrome tab. */
   id: TabRefId;
   url: string;
   title: string;
   favIconUrl?: string;
-  /** Live mapping to Chrome's ephemeral tabId. null = saved (closed). */
-  chromeTabId: number | null;
-  /**
-   * If true, the TabRef is retained as `saved` when its Chrome tab is closed.
-   * If false/undefined, closing the tab removes the TabRef from the group
-   * entirely. Pin only has meaning inside groups; entries in untrackedTabs
-   * are always live-only.
-   */
-  pinned?: boolean;
+  /** The Chrome tab this TabRef tracks. Always set. */
+  chromeTabId: ChromeTabId;
   addedAt: number;
 }
 
@@ -41,47 +49,66 @@ export interface Group {
   /** Order is array position. Do not introduce an `order` field. */
   tabs: TabRef[];
   createdAt: number;
-  /**
-   * Provenance: 'manual' = user created via the + button (default for legacy
-   * data where this field is missing). 'auto-domain' = created by the
-   * auto-group-by-domain action and reused when more tabs from the same
-   * domain are auto-grouped later.
-   */
-  kind?: GroupKind;
-  /** For auto-domain groups: the hostname used as the merge key. */
+  kind: GroupKind;
+  /** Required when kind === 'auto-domain'. Used as merge key when auto-grouping again. */
   autoDomain?: string;
 }
 
+/**
+ * State for one Chrome window. Lives in chrome.storage.session; lost when the
+ * window closes or the browser restarts.
+ */
 export interface WindowState {
-  id: WindowUUID;
-  /** Current Chrome windowId. Changes across restart. null when window is closed. */
-  chromeWindowId: number | null;
+  chromeWindowId: ChromeWindowId;
+  /** Manual + auto-domain groups in one list. `kind` distinguishes them. */
   groups: Group[];
-  /**
-   * Live tabs that don't belong to any group. All newly-created Chrome tabs
-   * land here; the user drags them into a group manually.
-   */
+  /** Live tabs not in any group. Auto-group operates on this. */
   untrackedTabs: TabRef[];
-  /** URL set captured at last update, used for matching restored windows. */
-  fingerprint: string[];
-  fingerprintUpdatedAt: number;
 }
 
+/** Session storage shape. */
+export interface SessionData {
+  windows: Record<ChromeWindowId, WindowState>;
+}
+
+/**
+ * A bookmark-like persistent collection. The only thing that survives browser
+ * restart. Click semantics: clicking an item opens a new Chrome tab and that
+ * new tab lands in the current window's untrackedTabs. The item itself is
+ * never consumed.
+ */
+export interface StashFolder {
+  id: StashFolderId;
+  name: string;
+  collapsed: boolean;
+  items: StashItem[];
+  createdAt: number;
+}
+
+export interface StashItem {
+  id: StashItemId;
+  url: string;
+  title: string;
+  favIconUrl?: string;
+  addedAt: number;
+}
+
+/** Local storage shape. */
 export interface AppData {
-  windows: Record<WindowUUID, WindowState>;
+  stash: StashFolder[];
   schemaVersion: number;
 }
 
 export type Theme = 'light' | 'dark' | 'system';
-export type SavedTabClickBehavior = 'current-tab' | 'new-tab' | 'new-window';
-/** Supported UI locales. `auto` follows the browser; the rest pin a locale. */
+export type StashClickBehavior = 'current-tab' | 'new-tab' | 'new-window';
 export type Locale = 'en' | 'zh' | 'ja';
 export type LanguageSetting = 'auto' | Locale;
 
 export interface Settings {
   theme: Theme;
   showFavicons: boolean;
-  savedTabClickBehavior: SavedTabClickBehavior;
+  /** Behavior when clicking a Stash item. */
+  stashClickBehavior: StashClickBehavior;
   defaultGroupExpanded: boolean;
   language: LanguageSetting;
 }
@@ -89,22 +116,23 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   showFavicons: true,
-  savedTabClickBehavior: 'new-tab',
+  stashClickBehavior: 'new-tab',
   defaultGroupExpanded: true,
   language: 'auto',
 };
 
 export function emptyAppData(): AppData {
-  return { windows: {}, schemaVersion: SCHEMA_VERSION };
+  return { stash: [], schemaVersion: SCHEMA_VERSION };
 }
 
-export function emptyWindowState(id: WindowUUID, chromeWindowId: number | null): WindowState {
+export function emptySessionData(): SessionData {
+  return { windows: {} };
+}
+
+export function emptyWindowState(chromeWindowId: ChromeWindowId): WindowState {
   return {
-    id,
     chromeWindowId,
     groups: [],
     untrackedTabs: [],
-    fingerprint: [],
-    fingerprintUpdatedAt: Date.now(),
   };
 }

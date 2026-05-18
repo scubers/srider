@@ -1,34 +1,61 @@
 <script lang="ts">
   import { sendMessage } from '$shared/messages';
   import { t } from '$shared/i18n/index.svelte';
+  import { viewStore } from '$shared/stores.svelte';
   import type { WindowState } from '$shared/types';
   import SearchBox from './SearchBox.svelte';
 
-  let { window }: { window: WindowState } = $props();
+  let { window: win }: { window: WindowState | null } = $props();
 
-  async function createGroup() {
-    const name = prompt(
-      t('header.new_group_prompt_title'),
-      t('header.new_group_default_name'),
-    );
-    if (!name) return;
-    await sendMessage({ type: 'createGroup', windowId: window.id, name });
+  async function onPlusClick() {
+    if (viewStore.mode === 'tabs') {
+      if (!win) return;
+      const name = prompt(
+        t('header.new_group_prompt_title'),
+        t('header.new_group_default_name'),
+      );
+      if (!name) return;
+      await sendMessage({
+        type: 'createGroup',
+        chromeWindowId: win.chromeWindowId,
+        name,
+      });
+    } else {
+      const name = prompt(
+        t('header.new_stash_folder_prompt_title'),
+        t('header.new_stash_folder_default_name'),
+      );
+      if (!name) return;
+      await sendMessage({ type: 'createStashFolder', name });
+    }
   }
 
   function openOptions() {
     chrome.runtime.openOptionsPage();
   }
+
+  const newButtonLabel = $derived(
+    viewStore.mode === 'tabs'
+      ? t('header.new_group_button')
+      : t('header.new_stash_folder_button'),
+  );
+  const newButtonTitle = $derived(
+    viewStore.mode === 'tabs'
+      ? t('header.new_group_title')
+      : t('header.new_stash_folder_title'),
+  );
+  const searchVisible = $derived(viewStore.mode === 'tabs');
 </script>
 
-<!--
-  No brand/title — Chrome's own side-panel chrome already shows the extension
-  icon + "Srider" at the very top. This header is a slim action toolbar.
--->
 <header class="header">
-  <SearchBox />
-  <button class="pill" onclick={createGroup} title={t('header.new_group_title')}>
+  {#if searchVisible}
+    <SearchBox />
+  {:else}
+    <span class="spacer"></span>
+  {/if}
+  <button class="pill" onclick={onPlusClick} title={newButtonTitle}>
     <span class="plus" aria-hidden="true">+</span>
-    <span>{t('header.new_group_button')}</span>
+    <span>{newButtonLabel}</span>
   </button>
   <button class="icon-btn" onclick={openOptions} title={t('header.settings')} aria-label={t('header.settings')}>
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -55,6 +82,10 @@
     position: sticky;
     top: 0;
     z-index: 10;
+  }
+
+  .spacer {
+    flex: 1;
   }
 
   .pill {

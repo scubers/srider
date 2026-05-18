@@ -14,7 +14,6 @@ import {
   handleWindowRemoved,
   recoverOnStartup,
   recoverOnInstall,
-  gcPendingOpens,
 } from './tab-handlers';
 import { handleMessage } from './message-handlers';
 import type { Message } from '$shared/messages';
@@ -40,9 +39,7 @@ chrome.tabs.onAttached.addListener((tabId, attachInfo) => {
 // ---------- Window events ----------
 
 chrome.windows.onCreated.addListener((window) => {
-  // handleWindowCreated is sync up to the buffer install; the rest is
-  // scheduled via setTimeout from inside.
-  handleWindowCreated(window);
+  void handleWindowCreated(window);
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {
@@ -52,11 +49,11 @@ chrome.windows.onRemoved.addListener((windowId) => {
 // ---------- Lifecycle ----------
 
 chrome.runtime.onInstalled.addListener(() => {
-  void recoverOnInstall().then(gcPendingOpens);
+  void recoverOnInstall();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void recoverOnStartup().then(gcPendingOpens);
+  void recoverOnStartup();
 });
 
 // Side panel opens via toolbar-icon click.

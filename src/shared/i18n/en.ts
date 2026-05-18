@@ -5,14 +5,22 @@
 const en = {
   // ---------- App-level ----------
   'app.loading': 'Loading…',
-  'app.matching_window': 'Matching window…',
 
   // ---------- Header ----------
   'header.new_group_button': 'New group',
   'header.new_group_title': 'Create new group',
   'header.new_group_prompt_title': 'New group name',
   'header.new_group_default_name': 'New Group',
+  'header.new_stash_folder_button': 'New folder',
+  'header.new_stash_folder_title': 'Create new Stash folder',
+  'header.new_stash_folder_prompt_title': 'New folder name',
+  'header.new_stash_folder_default_name': 'New folder',
   'header.settings': 'Settings',
+
+  // ---------- Switcher (top tabs) ----------
+  'switcher.tabs': 'Tabs',
+  'switcher.stash': 'Stash',
+  'switcher.aria_label': 'Switch view',
 
   // ---------- Search box ----------
   'search.placeholder': 'Search tabs…',
@@ -25,6 +33,8 @@ const en = {
   'stats.tabs': 'Tabs',
   'stats.groups': 'Groups',
   'stats.memory': 'Memory',
+  'stats.folders': 'Folders',
+  'stats.items': 'Items',
 
   // ---------- Group ----------
   'group.empty_hint': 'Empty group — drag a tab here',
@@ -35,10 +45,10 @@ const en = {
   'group.menu_rename': 'Rename',
   'group.menu_close_all': 'Close all',
   'group.menu_delete': 'Delete group',
+  'group.menu_save_to_stash': 'Save to Stash',
   'group.confirm_delete':
-    'Delete group「{name}」?\n(Open tabs move to Untracked; saved tabs are discarded.)',
-  'group.confirm_close_all':
-    'Close {count} open tab(s) in 「{name}」?\n(Pinned items become saved; unpinned ones are removed from the group.)',
+    'Delete group「{name}」?\n(Open tabs move to Untracked.)',
+  'group.confirm_close_all': 'Close {count} open tab(s) in 「{name}」?',
 
   // ---------- Untracked ----------
   'untracked.title': 'Untracked',
@@ -49,20 +59,34 @@ const en = {
   'untracked.confirm_close_all': 'Close {count} open tab(s) in Untracked?',
 
   // ---------- TabItem ----------
-  'tab.pin_title': 'Pin (keep as saved when closed)',
-  'tab.unpin_title': 'Unpin (remove from group when closed)',
-  'tab.pin_aria': 'Pin',
-  'tab.unpin_aria': 'Unpin',
+  'tab.save_to_stash_title': 'Save to Stash',
+  'tab.save_to_stash_aria': 'Save to Stash',
   'tab.close_live_title': 'Close tab',
-  'tab.remove_saved_title': 'Remove from group',
+
+  // ---------- Stash ----------
+  'stash.empty_title': 'Stash is empty',
+  'stash.empty_subtitle':
+    'Save tabs or groups here for long-term keeping.\nClick ☆ on a tab, or use a group menu.',
+  'stash.folder_empty_hint': 'Empty folder',
+  'stash.folder_menu_aria': 'More actions',
+  'stash.folder_menu_rename': 'Rename',
+  'stash.folder_menu_delete': 'Delete folder',
+  'stash.folder_menu_open_as_group':
+    'Open as group in this window',
+  'stash.confirm_delete_folder':
+    'Delete Stash folder「{name}」 and its {count} item(s)?',
+  'stash.item_remove_title': 'Remove from Stash',
+  'stash.item_remove_aria': 'Remove from Stash',
+  'stash.new_folder_button': 'New folder',
+  'stash.new_folder_title': 'Create new folder',
 
   // ---------- Empty state ----------
   'empty.title': 'No groups yet',
   'empty.subtitle':
-    'Click + at the top-right to create a group,\nor drag a browser tab here.',
+    'Click + at the top to create a group,\nor drag a browser tab here.',
 
   // ---------- Options page ----------
-  'options.title': 'Srider Settings',
+  'options.title': 'Side Tab Settings',
   'options.loading': 'Loading…',
   'options.language_label': 'Language',
   'options.language_auto': 'Follow browser',
@@ -77,10 +101,10 @@ const en = {
   'options.show_favicons_desc': 'Show the site icon next to each tab title',
   'options.default_expanded_label': 'New groups expanded',
   'options.default_expanded_desc': 'New groups start expanded by default',
-  'options.click_saved_label': 'Click on a saved tab',
-  'options.click_saved_current': 'Open in the current tab',
-  'options.click_saved_new_tab': 'Open in a new tab',
-  'options.click_saved_new_window': 'Open in a new window',
+  'options.stash_click_label': 'Click on a Stash item',
+  'options.stash_click_current': 'Open in the current tab',
+  'options.stash_click_new_tab': 'Open in a new tab',
+  'options.stash_click_new_window': 'Open in a new window',
   'options.browser_settings_label': 'Browser settings',
   'options.shortcut_link_title': 'Customize keyboard shortcut',
   'options.shortcut_link_desc':

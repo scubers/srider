@@ -13,7 +13,7 @@ export default defineManifest({
   version: pkg.version,
   description: '__MSG_extension_description__',
   minimum_chrome_version: '114',
-  permissions: ['tabs', 'storage', 'sidePanel', 'sessions'],
+  permissions: ['tabs', 'storage', 'sidePanel'],
   background: {
     service_worker: 'src/background/service-worker.ts',
     type: 'module',

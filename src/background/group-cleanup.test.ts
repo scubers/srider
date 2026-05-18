@@ -2,19 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { cleanupEmptyAutoGroups } from './group-cleanup';
 import { emptyWindowState, type Group, type TabRef, type WindowState } from '$shared/types';
 
-function tab(id: string, chromeTabId: number | null = 1, pinned = false): TabRef {
+function tab(id: string, chromeTabId = 1): TabRef {
   return {
     id,
     url: 'https://example.com',
     title: 'x',
     chromeTabId,
-    pinned,
     addedAt: 0,
   };
 }
 
 function makeWindow(groups: Group[]): WindowState {
-  const w = emptyWindowState('w', 1);
+  const w = emptyWindowState(1);
   w.groups = groups;
   return w;
 }
@@ -43,25 +42,7 @@ describe('cleanupEmptyAutoGroups', () => {
         id: 'g1',
         name: 'github.com',
         collapsed: false,
-        tabs: [tab('t1')],
-        createdAt: 0,
-        kind: 'auto-domain',
-        autoDomain: 'github.com',
-      },
-    ]);
-    expect(cleanupEmptyAutoGroups(w)).toBe(0);
-    expect(w.groups).toHaveLength(1);
-  });
-
-  it('keeps auto-domain groups whose only tabs are pinned (saved)', () => {
-    // After all live tabs close, pinned items remain (chromeTabId=null but
-    // tabs.length > 0), so the group is NOT empty and should stay.
-    const w = makeWindow([
-      {
-        id: 'g1',
-        name: 'github.com',
-        collapsed: false,
-        tabs: [tab('t1', null, true), tab('t2', null, true)],
+        tabs: [tab('t1', 1)],
         createdAt: 0,
         kind: 'auto-domain',
         autoDomain: 'github.com',
@@ -81,17 +62,9 @@ describe('cleanupEmptyAutoGroups', () => {
         createdAt: 0,
         kind: 'manual',
       },
-      {
-        id: 'g2',
-        name: 'gone',
-        collapsed: false,
-        tabs: [],
-        createdAt: 0,
-        // missing kind defaults to 'manual' (legacy data)
-      } as Group,
     ]);
     expect(cleanupEmptyAutoGroups(w)).toBe(0);
-    expect(w.groups).toHaveLength(2);
+    expect(w.groups).toHaveLength(1);
   });
 
   it('removes only the empty auto groups when mixed', () => {
@@ -100,7 +73,7 @@ describe('cleanupEmptyAutoGroups', () => {
         id: 'auto-keep',
         name: 'github.com',
         collapsed: false,
-        tabs: [tab('t1')],
+        tabs: [tab('t1', 1)],
         createdAt: 0,
         kind: 'auto-domain',
         autoDomain: 'github.com',

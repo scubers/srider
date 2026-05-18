@@ -86,7 +86,7 @@
   async function toggle() {
     await sendMessage({
       type: 'toggleGroupCollapsed',
-      windowId: win.id,
+      chromeWindowId: win.chromeWindowId,
       groupId: group.id,
       collapsed: !group.collapsed,
     });

@@ -1,21 +1,38 @@
 /**
  * Typed message protocol between Side Panel / Options UI and the Service Worker.
  *
- * Per spec §2 / CLAUDE.md: most state flow goes through chrome.storage.onChanged.
- * Messages are reserved for COMMANDS that require side effects only the SW can
- * perform (creating Chrome tabs, focusing windows, capturing query results).
+ * Most state flow goes through chrome.storage.onChanged. Messages are reserved
+ * for COMMANDS that require side effects only the SW can perform (creating
+ * Chrome tabs, focusing windows, capturing query results, mutating session /
+ * local storage).
+ *
+ * Windows are referenced by their Chrome `chromeWindowId` (a number) — the
+ * UUID-based windowId is gone since the redesign.
  */
-import type { GroupId, SavedTabClickBehavior, TabRefId, WindowUUID } from './types';
+import type {
+  ChromeWindowId,
+  GroupId,
+  StashFolderId,
+  StashItemId,
+  StashClickBehavior,
+  TabRefId,
+} from './types';
 
 export type Message =
-  | { type: 'createGroup'; windowId: WindowUUID; name: string }
-  | { type: 'renameGroup'; windowId: WindowUUID; groupId: GroupId; name: string }
-  | { type: 'deleteGroup'; windowId: WindowUUID; groupId: GroupId }
-  | { type: 'toggleGroupCollapsed'; windowId: WindowUUID; groupId: GroupId; collapsed: boolean }
-  | { type: 'reorderGroups'; windowId: WindowUUID; orderedIds: GroupId[] }
+  // ---------- Window-scoped: groups & tabs ----------
+  | { type: 'createGroup'; chromeWindowId: ChromeWindowId; name: string }
+  | { type: 'renameGroup'; chromeWindowId: ChromeWindowId; groupId: GroupId; name: string }
+  | { type: 'deleteGroup'; chromeWindowId: ChromeWindowId; groupId: GroupId }
+  | {
+      type: 'toggleGroupCollapsed';
+      chromeWindowId: ChromeWindowId;
+      groupId: GroupId;
+      collapsed: boolean;
+    }
+  | { type: 'reorderGroups'; chromeWindowId: ChromeWindowId; orderedIds: GroupId[] }
   | {
       type: 'moveTab';
-      windowId: WindowUUID;
+      chromeWindowId: ChromeWindowId;
       tabRefId: TabRefId;
       fromGroupId: GroupId | null; // null = untrackedTabs
       toGroupId: GroupId | null;
@@ -23,70 +40,70 @@ export type Message =
     }
   | {
       type: 'removeTab';
-      windowId: WindowUUID;
+      chromeWindowId: ChromeWindowId;
       tabRefId: TabRefId;
-      fromGroupId: GroupId | null; // null = untrackedTabs
-    }
-  | {
-      type: 'setTabPinned';
-      windowId: WindowUUID;
-      tabRefId: TabRefId;
-      groupId: GroupId; // pin only applies inside a group
-      pinned: boolean;
+      fromGroupId: GroupId | null;
     }
   | {
       type: 'activateLiveTab';
+      chromeWindowId: ChromeWindowId;
       tabRefId: TabRefId;
-      windowId: WindowUUID;
-    }
-  | {
-      type: 'openSavedTab';
-      windowId: WindowUUID;
-      tabRefId: TabRefId;
-      behavior: SavedTabClickBehavior;
     }
   | {
       type: 'closeLiveTab';
-      windowId: WindowUUID;
+      chromeWindowId: ChromeWindowId;
       tabRefId: TabRefId;
     }
   | {
       type: 'addUrlToGroup';
-      windowId: WindowUUID;
+      chromeWindowId: ChromeWindowId;
       groupId: GroupId;
       url: string;
       title?: string;
       chromeTabId?: number;
     }
+  | { type: 'autoGroupByDomain'; chromeWindowId: ChromeWindowId }
   | {
-      /**
-       * Distribute every TabRef currently in WindowState.untrackedTabs into
-       * auto-domain groups, one per hostname. Tabs whose URL has no
-       * groupable host stay in untrackedTabs. Existing auto-domain groups
-       * with matching domain receive the merge.
-       */
-      type: 'autoGroupByDomain';
-      windowId: WindowUUID;
-    }
-  | {
-      /**
-       * Close every live Chrome tab whose TabRef sits in the given container.
-       * `groupId: null` targets WindowState.untrackedTabs. The SW issues
-       * chrome.tabs.remove(); onRemoved → handleTabRemoved then applies the
-       * usual pin policy (pinned → saved, unpinned → dropped).
-       */
       type: 'closeAllInGroup';
-      windowId: WindowUUID;
-      groupId: GroupId | null;
+      chromeWindowId: ChromeWindowId;
+      groupId: GroupId | null; // null targets untrackedTabs
+    }
+  | { type: 'newTabInGroup'; chromeWindowId: ChromeWindowId; groupId: GroupId }
+
+  // ---------- Stash (global) ----------
+  | { type: 'createStashFolder'; name: string }
+  | { type: 'renameStashFolder'; folderId: StashFolderId; name: string }
+  | { type: 'deleteStashFolder'; folderId: StashFolderId }
+  | { type: 'toggleStashFolderCollapsed'; folderId: StashFolderId; collapsed: boolean }
+  | { type: 'reorderStashFolders'; orderedIds: StashFolderId[] }
+  | { type: 'deleteStashItem'; folderId: StashFolderId; itemId: StashItemId }
+  | {
+      type: 'reorderStashItems';
+      folderId: StashFolderId;
+      orderedIds: StashItemId[];
     }
   | {
-      /**
-       * Open a new Chrome tab (default new-tab page) and route it directly
-       * into the given group instead of WindowState.untrackedTabs.
-       */
-      type: 'newTabInGroup';
-      windowId: WindowUUID;
+      type: 'saveGroupToStash';
+      chromeWindowId: ChromeWindowId;
       groupId: GroupId;
+    }
+  | {
+      type: 'saveTabToStash';
+      chromeWindowId: ChromeWindowId;
+      tabRefId: TabRefId;
+      fromGroupId: GroupId | null; // null = untrackedTabs
+      targetFolderId?: StashFolderId; // defaults to a folder named "Unsorted"
+    }
+  | {
+      type: 'openStashItem';
+      itemId: StashItemId;
+      behavior: StashClickBehavior;
+      chromeWindowId: ChromeWindowId;
+    }
+  | {
+      type: 'openStashFolderAsGroup';
+      folderId: StashFolderId;
+      targetChromeWindowId: ChromeWindowId;
     };
 
 export type MessageResponse = { ok: true } | { ok: false; error: string };

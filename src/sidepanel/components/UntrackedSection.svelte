@@ -18,9 +18,7 @@
     activeTabStore.chromeTabId !== null &&
       win.untrackedTabs.some((t) => t.chromeTabId === activeTabStore.chromeTabId),
   );
-  const liveCount = $derived(
-    win.untrackedTabs.filter((t) => t.chromeTabId !== null).length,
-  );
+  const liveCount = $derived(win.untrackedTabs.length);
   const matchedTabs = $derived(win.untrackedTabs.filter((t) => searchStore.match(t)));
   const visibleInSearch = $derived(!searchStore.active || matchedTabs.length > 0);
 
@@ -43,7 +41,7 @@
     if (busy) return;
     busy = true;
     try {
-      await sendMessage({ type: 'autoGroupByDomain', windowId: win.id });
+      await sendMessage({ type: 'autoGroupByDomain', chromeWindowId: win.chromeWindowId });
     } finally {
       busy = false;
     }
@@ -106,7 +104,7 @@
     menuOpen = false;
     if (liveCount === 0) return;
     if (!confirm(t('untracked.confirm_close_all', { count: liveCount }))) return;
-    await sendMessage({ type: 'closeAllInGroup', windowId: win.id, groupId: null });
+    await sendMessage({ type: 'closeAllInGroup', chromeWindowId: win.chromeWindowId, groupId: null });
   }
 </script>
 

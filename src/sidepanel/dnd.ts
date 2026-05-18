@@ -120,7 +120,7 @@ function handleGroupDrop(
 
   void sendMessage({
     type: 'reorderGroups',
-    windowId: window.id,
+    chromeWindowId: window.chromeWindowId,
     orderedIds: order,
   });
 }
@@ -138,7 +138,7 @@ function handleTabDrop(
     if (!targetGroup) return;
     void sendMessage({
       type: 'moveTab',
-      windowId: window.id,
+      chromeWindowId: window.chromeWindowId,
       tabRefId: source.tabRefId,
       fromGroupId: source.fromGroupId,
       toGroupId: target.groupId,
@@ -150,7 +150,7 @@ function handleTabDrop(
   if (target.kind === 'untracked') {
     void sendMessage({
       type: 'moveTab',
-      windowId: window.id,
+      chromeWindowId: window.chromeWindowId,
       tabRefId: source.tabRefId,
       fromGroupId: source.fromGroupId,
       toGroupId: null,
@@ -181,7 +181,7 @@ function handleTabDrop(
 
     void sendMessage({
       type: 'moveTab',
-      windowId: window.id,
+      chromeWindowId: window.chromeWindowId,
       tabRefId: source.tabRefId,
       fromGroupId: source.fromGroupId,
       toGroupId: target.groupId,
@@ -219,7 +219,7 @@ function installExternalDropHandlers(getWindow: () => WindowState | null): () =>
     // chromeTabId resolution happens in the SW where chrome.tabs is available.
     await sendMessage({
       type: 'addUrlToGroup',
-      windowId: window.id,
+      chromeWindowId: window.chromeWindowId,
       groupId,
       url,
     });

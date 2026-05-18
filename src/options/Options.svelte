@@ -4,7 +4,7 @@
   import { t } from '$shared/i18n/index.svelte';
   import type {
     LanguageSetting,
-    SavedTabClickBehavior,
+    StashClickBehavior,
     Theme,
   } from '$shared/types';
 
@@ -24,7 +24,6 @@
     if (settingsStore.loaded) applyTheme(settingsStore.value.theme);
   });
 
-  // Keep the document title in sync with the resolved locale.
   $effect(() => {
     document.title = t('options.title');
   });
@@ -45,12 +44,10 @@
     await settingsStore.update({ defaultGroupExpanded });
   }
 
-  async function setClickBehavior(savedTabClickBehavior: SavedTabClickBehavior) {
-    await settingsStore.update({ savedTabClickBehavior });
+  async function setClickBehavior(stashClickBehavior: StashClickBehavior) {
+    await settingsStore.update({ stashClickBehavior });
   }
 
-  // The two settings below live in Chrome's own UI; the extension cannot
-  // toggle them, only open the right chrome:// page.
   function openShortcutSettings() {
     void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   }
@@ -60,7 +57,7 @@
   }
 
   const themeOptions: Theme[] = ['light', 'dark', 'system'];
-  const clickOptions: SavedTabClickBehavior[] = [
+  const clickOptions: StashClickBehavior[] = [
     'current-tab',
     'new-tab',
     'new-window',
@@ -73,10 +70,10 @@
     return t('options.theme_system');
   }
 
-  function clickLabel(v: SavedTabClickBehavior): string {
-    if (v === 'current-tab') return t('options.click_saved_current');
-    if (v === 'new-tab') return t('options.click_saved_new_tab');
-    return t('options.click_saved_new_window');
+  function clickLabel(v: StashClickBehavior): string {
+    if (v === 'current-tab') return t('options.stash_click_current');
+    if (v === 'new-tab') return t('options.stash_click_new_tab');
+    return t('options.stash_click_new_window');
   }
 
   function languageLabel(v: LanguageSetting): string {
@@ -159,7 +156,7 @@
     </section>
 
     <section class="field">
-      <div class="label">{t('options.click_saved_label')}</div>
+      <div class="label">{t('options.stash_click_label')}</div>
       <div class="control radio-col">
         {#each clickOptions as v (v)}
           <label class="radio">
@@ -167,7 +164,7 @@
               type="radio"
               name="click-behavior"
               value={v}
-              checked={settingsStore.value.savedTabClickBehavior === v}
+              checked={settingsStore.value.stashClickBehavior === v}
               onchange={() => setClickBehavior(v)}
             />
             <span>{clickLabel(v)}</span>

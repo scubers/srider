@@ -1,17 +1,30 @@
 <script lang="ts">
   import { t } from '$shared/i18n/index.svelte';
+  import { appDataStore, viewStore } from '$shared/stores.svelte';
   import type { WindowState } from '$shared/types';
 
-  let { window: win }: { window: WindowState } = $props();
+  let { window: win }: { window: WindowState | null } = $props();
 
+  const isStash = $derived(viewStore.mode === 'stash');
+
+  // Tabs view stats
   const tabCount = $derived.by(() => {
+    if (!win) return 0;
     let n = win.untrackedTabs.length;
     for (const g of win.groups) n += g.tabs.length;
     return n;
   });
-  const groupCount = $derived(win.groups.length);
+  const groupCount = $derived(win?.groups.length ?? 0);
 
-  /** SidePanel JS heap usage in MB. Cheap to read; meaningful in dev. */
+  // Stash view stats
+  const folderCount = $derived(appDataStore.data.stash.length);
+  const itemCount = $derived.by(() => {
+    let n = 0;
+    for (const f of appDataStore.data.stash) n += f.items.length;
+    return n;
+  });
+
+  // Mem (tabs view only)
   let memMB = $state<string | null>(null);
 
   $effect(() => {
@@ -34,26 +47,38 @@
 </script>
 
 <section class="stats" aria-label={t('stats.aria_label')}>
-  <div class="stat">
-    <div class="value tnum">{tabCount}</div>
-    <div class="label">{t('stats.tabs')}</div>
-  </div>
-  <div class="divider" aria-hidden="true"></div>
-  <div class="stat">
-    <div class="value tnum">{groupCount}</div>
-    <div class="label">{t('stats.groups')}</div>
-  </div>
-  <div class="divider" aria-hidden="true"></div>
-  <div class="stat">
-    <div class="value tnum">
-      {#if memMB !== null}
-        {memMB}<span class="unit">m</span>
-      {:else}
-        —
-      {/if}
+  {#if isStash}
+    <div class="stat">
+      <div class="value tnum">{folderCount}</div>
+      <div class="label">{t('stats.folders')}</div>
     </div>
-    <div class="label">{t('stats.memory')}</div>
-  </div>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="stat">
+      <div class="value tnum">{itemCount}</div>
+      <div class="label">{t('stats.items')}</div>
+    </div>
+  {:else}
+    <div class="stat">
+      <div class="value tnum">{tabCount}</div>
+      <div class="label">{t('stats.tabs')}</div>
+    </div>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="stat">
+      <div class="value tnum">{groupCount}</div>
+      <div class="label">{t('stats.groups')}</div>
+    </div>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="stat">
+      <div class="value tnum">
+        {#if memMB !== null}
+          {memMB}<span class="unit">m</span>
+        {:else}
+          —
+        {/if}
+      </div>
+      <div class="label">{t('stats.memory')}</div>
+    </div>
+  {/if}
 </section>
 
 <style>
