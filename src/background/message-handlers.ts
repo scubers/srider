@@ -7,6 +7,7 @@
 import { getAppData } from '$shared/storage';
 import { uuid } from '$shared/id';
 import { extractGroupingDomain, isSafeNavigationUrl } from '$shared/url';
+import { formatAutoGroupName } from '$shared/group-naming';
 import type {
   AppData,
   Group,
@@ -385,13 +386,15 @@ async function autoGroupByDomain(
     window.untrackedTabs = remaining;
 
     // For each domain bucket, merge into an existing auto-domain group or
-    // create a new one.
+    // create a new one. New groups get a brand-prefixed name when the bucket
+    // titles agree on one; existing groups keep their current name so user
+    // renames (and the initial inference) stay stable across merges.
     for (const [domain, tabs] of buckets) {
       let group = autoByDomain.get(domain);
       if (!group) {
         group = {
           id: uuid(),
-          name: domain,
+          name: formatAutoGroupName(domain, tabs.map((t) => t.title)),
           collapsed: false,
           tabs: [],
           createdAt: Date.now(),

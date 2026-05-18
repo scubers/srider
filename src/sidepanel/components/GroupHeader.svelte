@@ -154,12 +154,7 @@
   {#if renaming}
     <RenameInput initial={group.name} onCommit={commitRename} onCancel={() => (renaming = false)} />
   {:else}
-    <span
-      class="name"
-      title={isAuto && group.autoDomain
-        ? t('group.auto_title', { domain: group.autoDomain })
-        : group.name}
-    >
+    <span class="name" title={group.name}>
       <span class="name-text">{group.name}</span>
     </span>
     <span class="count tnum">{totalCount}</span>

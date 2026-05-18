@@ -420,12 +420,14 @@ UI（未归类区段的"按域名分组"按钮）发 { type: 'autoGroupByDomain'
              - 有 host → 按 domain 入桶
         4. 把 untrackedTabs 替换成"留下的"那部分
         5. 对每个 domain 桶：
-             - Map 命中已有 auto-domain 分组 → append 进去
-             - 未命中 → 新建一个 { kind:'auto-domain', autoDomain:domain, name:domain }
+             - Map 命中已有 auto-domain 分组 → append 进去（保留现名，不重新推断）
+             - 未命中 → 新建一个 { kind:'auto-domain', autoDomain:domain, name:formatAutoGroupName(domain, titles) }
         6. 写入 storage
 ```
 
 **合并语义**：再次点击按钮、或后续手动把同域名标签留在 untrackedTabs 后再点击，会**追加**到已有的 auto-domain 分组里，不会复制。
+
+**初始命名启发式**（`formatAutoGroupName`，见 `src/shared/group-naming.ts`）：仅在**新建** auto-domain 分组时根据该桶的 tab 标题命名——取桶内最短的非空标题（首页/索引页通常最短，最能代表"这个站点"）作为代表，命名为 `"<title>(<domain>)"`；若全部标题为空则只用 `domain`。merge 时**不**重新计算名字，保留现有 `name`，从而尊重用户重命名以及首轮选择的稳定性。UI 用 CSS ellipsis 单行截断，header `title` tooltip 在 hover 时显示完整文本。
 
 **用户可以重命名 auto-domain 分组**——`autoDomain` 字段独立于 `name` 保留，所以即使重命名后，下次按钮触发时仍能合并进去。
 
