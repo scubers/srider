@@ -15,55 +15,86 @@ import { cleanupEmptyAutoGroups } from './group-cleanup';
 
 const PENDING_ROUTE_TTL_MS = 5_000;
 
-// ---------- Pending tab-creation route ----------
+// ---------- Pending tab-creation slots ----------
 //
 // When the SW deliberately creates Chrome tab(s) on behalf of a UI command
-// (the "+" button in a group; "open Stash folder as group"), it reserves a
-// route here so the resulting onCreated event(s) place the new TabRef(s)
-// directly into the target group instead of the default untrackedTabs.
+// (the "+" button in a group; "open Stash folder as group"; "open Stash item
+// in new tab"), it pushes one slot per tab here so the resulting onCreated
+// event(s) can pick up the metadata in FIFO order.
 //
-// `remaining` is the number of tabs the route should still absorb. For the
-// "+" button it's 1 (single-use). For "open Stash folder as group" it's the
-// number of items in the folder. Each onCreated consumes one slot.
-interface PendingRoute {
-  groupId: string;
-  remaining: number;
+// A slot carries optional `groupId` (where to route the new TabRef — default
+// is untrackedTabs) and optional `name` (alias to attach to the new TabRef).
+interface PendingSlot {
+  groupId?: string;
+  name?: string;
+}
+
+interface PendingQueue {
+  slots: PendingSlot[];
   expiresAt: number;
 }
-const pendingTabRoute = new Map<ChromeWindowId, PendingRoute>();
+const pendingTabQueue = new Map<ChromeWindowId, PendingQueue>();
+
+function refreshExpiry(entry: PendingQueue): void {
+  entry.expiresAt = Date.now() + Math.max(entry.slots.length, 1) * PENDING_ROUTE_TTL_MS;
+}
+
+export function pushPendingTabSlots(
+  chromeWindowId: ChromeWindowId,
+  slots: PendingSlot[],
+): void {
+  if (slots.length === 0) return;
+  let entry = pendingTabQueue.get(chromeWindowId);
+  if (entry && Date.now() <= entry.expiresAt) {
+    entry.slots.push(...slots);
+    refreshExpiry(entry);
+  } else {
+    entry = { slots: [...slots], expiresAt: 0 };
+    refreshExpiry(entry);
+    pendingTabQueue.set(chromeWindowId, entry);
+  }
+  // Auto-cleanup if some onCreated events never arrive (e.g., chrome.tabs.create
+  // rejected, or the user closed the target window mid-stream).
+  const expiresAtSnapshot = entry.expiresAt;
+  setTimeout(
+    () => {
+      const cur = pendingTabQueue.get(chromeWindowId);
+      if (cur && cur.expiresAt <= expiresAtSnapshot && Date.now() >= cur.expiresAt) {
+        pendingTabQueue.delete(chromeWindowId);
+      }
+    },
+    Math.max(slots.length, 1) * PENDING_ROUTE_TTL_MS + 100,
+  );
+}
 
 export function reservePendingTabRoute(
   chromeWindowId: ChromeWindowId,
   groupId: string,
   count: number,
 ): void {
-  const expiresAt = Date.now() + Math.max(count, 1) * PENDING_ROUTE_TTL_MS;
-  pendingTabRoute.set(chromeWindowId, { groupId, remaining: count, expiresAt });
-  // Auto-cleanup if some onCreated events never arrive (e.g., chrome.tabs.create
-  // rejected, or the user closed the target window mid-stream).
-  setTimeout(() => {
-    const entry = pendingTabRoute.get(chromeWindowId);
-    if (entry && entry.groupId === groupId && entry.expiresAt <= Date.now()) {
-      pendingTabRoute.delete(chromeWindowId);
-    }
-  }, Math.max(count, 1) * PENDING_ROUTE_TTL_MS + 100);
+  const slots: PendingSlot[] = Array.from({ length: count }, () => ({ groupId }));
+  pushPendingTabSlots(chromeWindowId, slots);
 }
 
-function consumePendingRoute(
+export function reservePendingTabAlias(
   chromeWindowId: ChromeWindowId,
-): string | null {
-  const entry = pendingTabRoute.get(chromeWindowId);
+  name: string,
+): void {
+  pushPendingTabSlots(chromeWindowId, [{ name }]);
+}
+
+function consumePendingSlot(chromeWindowId: ChromeWindowId): PendingSlot | null {
+  const entry = pendingTabQueue.get(chromeWindowId);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
-    pendingTabRoute.delete(chromeWindowId);
+    pendingTabQueue.delete(chromeWindowId);
     return null;
   }
-  const groupId = entry.groupId;
-  entry.remaining -= 1;
-  if (entry.remaining <= 0) {
-    pendingTabRoute.delete(chromeWindowId);
+  const slot = entry.slots.shift();
+  if (entry.slots.length === 0) {
+    pendingTabQueue.delete(chromeWindowId);
   }
-  return groupId;
+  return slot ?? null;
 }
 
 // ---------- Internal helpers ----------
@@ -123,6 +154,8 @@ export async function handleTabCreated(tab: chrome.tabs.Tab): Promise<void> {
   const chromeWindowId = tab.windowId;
 
   await withWindow(chromeWindowId, (state) => {
+    const slot = consumePendingSlot(chromeWindowId);
+
     // Already known? (Recovery may have pre-populated; or this event is a
     // duplicate.) Refresh fields rather than creating a duplicate TabRef.
     const existing = findTabInState(state, chromeTabId);
@@ -131,16 +164,17 @@ export async function handleTabCreated(tab: chrome.tabs.Tab): Promise<void> {
       if (url) existing.tab.url = url;
       if (tab.title) existing.tab.title = tab.title;
       if (tab.favIconUrl) existing.tab.favIconUrl = tab.favIconUrl;
+      if (slot?.name) existing.tab.name = slot.name;
       return;
     }
 
     const newRef = makeTabRef({ ...tab, id: chromeTabId });
+    if (slot?.name) newRef.name = slot.name;
 
     // If a route was reserved (newTabInGroup or openStashFolderAsGroup),
     // place the TabRef into the target group.
-    const routedGroupId = consumePendingRoute(chromeWindowId);
-    if (routedGroupId) {
-      const target = state.groups.find((g) => g.id === routedGroupId);
+    if (slot?.groupId) {
+      const target = state.groups.find((g) => g.id === slot.groupId);
       if (target) {
         target.tabs.push(newRef);
         return;
@@ -305,8 +339,8 @@ export async function handleWindowRemoved(chromeWindowId: ChromeWindowId): Promi
   await withSessionData((data) => {
     delete data.windows[chromeWindowId];
   });
-  // Clear any pending route for the dead window.
-  pendingTabRoute.delete(chromeWindowId);
+  // Clear any pending slots for the dead window.
+  pendingTabQueue.delete(chromeWindowId);
 }
 
 // ---------- Startup recovery ----------
@@ -346,8 +380,8 @@ export function recoverOnInstall(): Promise<void> {
 
 // Exposed for tests.
 export const __testing__ = {
-  pendingTabRoute,
-  consumePendingRoute,
+  pendingTabQueue,
+  consumePendingSlot,
   resetRecover: () => {
     recoverOncePromise = null;
   },

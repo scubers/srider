@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitHighlight } from './highlight';
+import { splitAliasHighlight, splitHighlight } from './highlight';
 
 describe('splitHighlight', () => {
   it('returns the whole text un-marked when the query is empty', () => {
@@ -67,6 +67,45 @@ describe('splitHighlight', () => {
   it('handles a hit equal to the whole text', () => {
     expect(splitHighlight('exact', 'exact')).toEqual([
       { text: 'exact', mark: true },
+    ]);
+  });
+});
+
+describe('splitAliasHighlight', () => {
+  it('tags every segment as non-alias when there is no alias prefix', () => {
+    expect(splitAliasHighlight('', 'GitHub', 'hub')).toEqual([
+      { text: 'Git', mark: false, alias: false },
+      { text: 'Hub', mark: true, alias: false },
+    ]);
+  });
+
+  it('tags alias-only and title-only segments correctly', () => {
+    // alias="(Work) ", title="Docs" — query hits the title, not the prefix.
+    expect(splitAliasHighlight('(Work) ', 'Docs', 'docs')).toEqual([
+      { text: '(Work) ', mark: false, alias: true },
+      { text: 'Docs', mark: true, alias: false },
+    ]);
+  });
+
+  it('splits a highlight segment that straddles the alias boundary', () => {
+    // alias = "(ab) " (length 5), title = "cdef".
+    // query "b) c" hits positions 2-5 (alias tail) + 5 (title head).
+    // splitHighlight produces: "(a" non-mark | "b) c" mark | "def" non-mark.
+    // The straddling "b) c" must split into "b) " alias-mark + "c" title-mark.
+    expect(splitAliasHighlight('(ab) ', 'cdef', 'b) c')).toEqual([
+      { text: '(a', mark: false, alias: true },
+      { text: 'b) ', mark: true, alias: true },
+      { text: 'c', mark: true, alias: false },
+      { text: 'def', mark: false, alias: false },
+    ]);
+  });
+
+  it('tags an alias-internal hit correctly', () => {
+    expect(splitAliasHighlight('(Work) ', 'Inbox', 'work')).toEqual([
+      { text: '(', mark: false, alias: true },
+      { text: 'Work', mark: true, alias: true },
+      { text: ') ', mark: false, alias: true },
+      { text: 'Inbox', mark: false, alias: false },
     ]);
   });
 });

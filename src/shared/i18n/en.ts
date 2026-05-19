@@ -62,6 +62,8 @@ const en = {
   'tab.save_to_stash_title': 'Save to Stash',
   'tab.save_to_stash_aria': 'Save to Stash',
   'tab.close_live_title': 'Close tab',
+  'tab.menu_aria': 'More actions',
+  'tab.menu_rename': 'Rename',
 
   // ---------- Stash ----------
   'stash.empty_title': 'Stash is empty',
@@ -77,6 +79,8 @@ const en = {
     'Delete Stash folder「{name}」 and its {count} item(s)?',
   'stash.item_remove_title': 'Remove from Stash',
   'stash.item_remove_aria': 'Remove from Stash',
+  'stash.item_menu_aria': 'More actions',
+  'stash.item_menu_rename': 'Rename',
   'stash.new_folder_button': 'New folder',
   'stash.new_folder_title': 'Create new folder',
 

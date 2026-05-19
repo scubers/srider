@@ -38,6 +38,8 @@ export interface TabRef {
   /** The Chrome tab this TabRef tracks. Always set. */
   chromeTabId: ChromeTabId;
   addedAt: number;
+  /** User-provided alias rendered as `(name) title`. Empty/undefined means no alias. */
+  name?: string;
 }
 
 export type GroupKind = 'manual' | 'auto-domain';
@@ -91,6 +93,8 @@ export interface StashItem {
   title: string;
   favIconUrl?: string;
   addedAt: number;
+  /** User-provided alias. Carried in/out of Stash with the item. */
+  name?: string;
 }
 
 /** Local storage shape. */

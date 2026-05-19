@@ -15,7 +15,8 @@
   import { runSaveAnimation } from '../save-animation';
   import Favicon from './Favicon.svelte';
   import { searchStore } from '../search.svelte';
-  import { splitHighlight } from '../highlight';
+  import { splitAliasHighlight } from '../highlight';
+  import RenameInput from './RenameInput.svelte';
 
   let {
     tab,
@@ -37,11 +38,21 @@
   let rootEl: HTMLDivElement | undefined = $state();
   let hoverEdge: Edge | null = $state(null);
   let isDragging = $state(false);
+  let renaming = $state(false);
+  let menuOpen = $state(false);
+  let menuPopupEl: HTMLDivElement | undefined = $state();
+  let menuPos = $state<{ left: number; top: number } | null>(null);
+
+  const APPROX_MENU_WIDTH = 180;
+  const APPROX_MENU_HEIGHT = 110;
 
   const isActive = $derived(tab.chromeTabId === activeTabStore.chromeTabId);
   const host = $derived(extractGroupingDomain(tab.url) ?? tab.url ?? '?');
-  const displayTitle = $derived(tab.title || tab.url);
-  const titleSegments = $derived(splitHighlight(displayTitle, searchStore.normalized));
+
+  const aliasPrefix = $derived(tab.name ? `(${tab.name}) ` : '');
+  const richSegments = $derived(
+    splitAliasHighlight(aliasPrefix, tab.title || tab.url, searchStore.normalized),
+  );
 
   onMount(() => {
     if (!rootEl) return;
@@ -71,6 +82,26 @@
     ];
     return () => {
       for (const c of cleanups) c();
+    };
+  });
+
+  $effect(() => {
+    if (!menuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (menuPopupEl?.contains(target)) return;
+      menuOpen = false;
+    };
+    document.addEventListener('mousedown', onDocClick);
+    const onReposition = () => {
+      menuOpen = false;
+    };
+    window.addEventListener('scroll', onReposition, true);
+    window.addEventListener('resize', onReposition);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      window.removeEventListener('scroll', onReposition, true);
+      window.removeEventListener('resize', onReposition);
     };
   });
 
@@ -107,11 +138,39 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (renaming) return;
     if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       void onActivate();
     }
+  }
+
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    if (renaming) return;
+    let left = e.clientX;
+    let top = e.clientY;
+    if (left + APPROX_MENU_WIDTH > window.innerWidth - 4) {
+      left = window.innerWidth - APPROX_MENU_WIDTH - 4;
+    }
+    if (left < 4) left = 4;
+    if (top + APPROX_MENU_HEIGHT > window.innerHeight - 4) {
+      top = e.clientY - APPROX_MENU_HEIGHT;
+    }
+    if (top < 4) top = 4;
+    menuPos = { left, top };
+    menuOpen = true;
+  }
+
+  async function commitRename(name: string) {
+    renaming = false;
+    await sendMessage({
+      type: 'renameTab',
+      chromeWindowId: win.chromeWindowId,
+      tabRefId: tab.id,
+      name,
+    });
   }
 </script>
 
@@ -126,8 +185,10 @@
   tabindex="0"
   data-tab-id={tab.id}
   aria-current={isActive ? 'true' : undefined}
-  onclick={onActivate}
+  onclick={renaming ? undefined : onActivate}
+  ondblclick={renaming ? undefined : () => { renaming = true; }}
   onkeydown={onKeydown}
+  oncontextmenu={onContextMenu}
   title={tab.url}
 >
   {#if iconVariant === 'dot'}
@@ -138,11 +199,29 @@
     </span>
   {/if}
 
-  <span class="title">
-    {#each titleSegments as seg, i (i)}
-      {#if seg.mark}<mark>{seg.text}</mark>{:else}{seg.text}{/if}
-    {/each}
-  </span>
+  {#if renaming}
+    <RenameInput
+      initial={tab.name ?? ''}
+      onCommit={commitRename}
+      onCancel={() => (renaming = false)}
+    />
+  {:else}
+    <span class="title">
+      {#each richSegments as seg, i (i)}
+        {#if seg.alias}
+          {#if seg.mark}
+            <span class="alias"><mark>{seg.text}</mark></span>
+          {:else}
+            <span class="alias">{seg.text}</span>
+          {/if}
+        {:else if seg.mark}
+          <mark>{seg.text}</mark>
+        {:else}
+          {seg.text}
+        {/if}
+      {/each}
+    </span>
+  {/if}
 
   <button
     class="save"
@@ -168,6 +247,21 @@
     aria-label={t('tab.close_live_title')}
   >×</button>
 </div>
+
+{#if menuOpen && menuPos}
+  <div
+    bind:this={menuPopupEl}
+    class="menu"
+    role="menu"
+    aria-label={t('tab.menu_aria')}
+    style:left="{menuPos.left}px"
+    style:top="{menuPos.top}px"
+  >
+    <button role="menuitem" onclick={() => { renaming = true; menuOpen = false; }}>{t('tab.menu_rename')}</button>
+    <button role="menuitem" onclick={(e) => { menuOpen = false; void onSaveToStash(e); }}>{t('tab.save_to_stash_title')}</button>
+    <button role="menuitem" onclick={(e) => { menuOpen = false; void onRemove(e); }}>{t('tab.close_live_title')}</button>
+  </div>
+{/if}
 
 <style>
   .tab {
@@ -271,6 +365,24 @@
     color: #fff;
   }
 
+  .alias {
+    color: var(--accent);
+    font-weight: inherit;
+  }
+
+  .alias mark {
+    background: var(--accent-bg-soft);
+    color: var(--accent);
+    border-radius: 2px;
+    padding: 0 1px;
+    font: inherit;
+  }
+
+  .tab.active .alias mark {
+    background: var(--accent);
+    color: #fff;
+  }
+
   .save,
   .remove {
     flex: 0 0 16px;
@@ -302,5 +414,31 @@
   .remove:hover {
     background: var(--surface);
     color: var(--danger);
+  }
+
+  .menu {
+    position: fixed;
+    min-width: 160px;
+    max-width: 220px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    padding: 4px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .menu button {
+    padding: 6px 10px;
+    text-align: left;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .menu button:hover:not(:disabled) {
+    background: var(--surface-hover);
   }
 </style>

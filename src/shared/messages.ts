@@ -69,6 +69,13 @@ export type Message =
       groupId: GroupId | null; // null targets untrackedTabs
     }
   | { type: 'newTabInGroup'; chromeWindowId: ChromeWindowId; groupId: GroupId }
+  | {
+      type: 'renameTab';
+      chromeWindowId: ChromeWindowId;
+      tabRefId: TabRefId;
+      /** Empty string clears the alias; non-empty trims and assigns. */
+      name: string;
+    }
 
   // ---------- Stash (global) ----------
   | { type: 'createStashFolder'; name: string }
@@ -77,6 +84,13 @@ export type Message =
   | { type: 'toggleStashFolderCollapsed'; folderId: StashFolderId; collapsed: boolean }
   | { type: 'reorderStashFolders'; orderedIds: StashFolderId[] }
   | { type: 'deleteStashItem'; folderId: StashFolderId; itemId: StashItemId }
+  | {
+      type: 'renameStashItem';
+      folderId: StashFolderId;
+      itemId: StashItemId;
+      /** Empty string clears the alias; non-empty trims and assigns. */
+      name: string;
+    }
   | {
       type: 'reorderStashItems';
       folderId: StashFolderId;

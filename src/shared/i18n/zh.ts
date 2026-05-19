@@ -60,6 +60,8 @@ const zh: Record<MessageKey, string> = {
   'tab.save_to_stash_title': '保存到收藏堆',
   'tab.save_to_stash_aria': '保存到收藏堆',
   'tab.close_live_title': '关闭标签',
+  'tab.menu_aria': '更多操作',
+  'tab.menu_rename': '重命名',
 
   // ---------- Stash ----------
   'stash.empty_title': '收藏堆是空的',
@@ -74,6 +76,8 @@ const zh: Record<MessageKey, string> = {
     '删除收藏堆文件夹「{name}」及其 {count} 个项目？',
   'stash.item_remove_title': '从收藏堆移除',
   'stash.item_remove_aria': '从收藏堆移除',
+  'stash.item_menu_aria': '更多操作',
+  'stash.item_menu_rename': '重命名',
   'stash.new_folder_button': '新建文件夹',
   'stash.new_folder_title': '新建文件夹',
 

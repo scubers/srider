@@ -41,3 +41,40 @@ export function splitHighlight(
 
   return segs;
 }
+
+export interface AliasHighlightSegment extends HighlightSegment {
+  /** True when this segment falls inside the leading `(name) ` alias prefix. */
+  alias: boolean;
+}
+
+/**
+ * Run `splitHighlight` over `aliasPrefix + title`, then tag each segment with
+ * whether it sits inside the alias prefix. Segments that straddle the
+ * boundary are split into two so the template can colour them independently.
+ */
+export function splitAliasHighlight(
+  aliasPrefix: string,
+  title: string,
+  normalizedQuery: string,
+): AliasHighlightSegment[] {
+  const raw = splitHighlight(aliasPrefix + title, normalizedQuery);
+  if (!aliasPrefix) return raw.map((s) => ({ ...s, alias: false }));
+
+  const aliasLen = aliasPrefix.length;
+  const out: AliasHighlightSegment[] = [];
+  let pos = 0;
+  for (const seg of raw) {
+    const segEnd = pos + seg.text.length;
+    if (segEnd <= aliasLen) {
+      out.push({ text: seg.text, mark: seg.mark, alias: true });
+    } else if (pos >= aliasLen) {
+      out.push({ text: seg.text, mark: seg.mark, alias: false });
+    } else {
+      const cut = aliasLen - pos;
+      out.push({ text: seg.text.slice(0, cut), mark: seg.mark, alias: true });
+      out.push({ text: seg.text.slice(cut), mark: seg.mark, alias: false });
+    }
+    pos = segEnd;
+  }
+  return out;
+}

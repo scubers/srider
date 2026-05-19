@@ -18,7 +18,11 @@ import type {
 import type { Message, MessageResponse } from '$shared/messages';
 import { withAppData, withSessionData, withWindow } from './write-queue';
 import { cleanupEmptyAutoGroups } from './group-cleanup';
-import { reservePendingTabRoute } from './tab-handlers';
+import {
+  pushPendingTabSlots,
+  reservePendingTabAlias,
+  reservePendingTabRoute,
+} from './tab-handlers';
 
 const DEFAULT_STASH_FOLDER_NAME = 'Unsorted';
 
@@ -36,6 +40,17 @@ function validName(s: unknown): string {
   if (typeof s !== 'string') throw new Error('name must be a string');
   const trimmed = s.trim();
   if (!trimmed) throw new Error('name cannot be empty');
+  if (trimmed.length > MAX_NAME_LEN) {
+    throw new Error(`name too long (max ${MAX_NAME_LEN})`);
+  }
+  return trimmed;
+}
+
+/** Like validName but treats empty/whitespace as a request to clear (returns undefined). */
+function validAliasName(s: unknown): string | undefined {
+  if (typeof s !== 'string') throw new Error('name must be a string');
+  const trimmed = s.trim();
+  if (!trimmed) return undefined;
   if (trimmed.length > MAX_NAME_LEN) {
     throw new Error(`name too long (max ${MAX_NAME_LEN})`);
   }
@@ -96,6 +111,8 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await closeAllInGroup(msg);
       case 'newTabInGroup':
         return await newTabInGroup(msg);
+      case 'renameTab':
+        return await renameTab(msg);
       case 'createStashFolder':
         return await createStashFolder(msg);
       case 'renameStashFolder':
@@ -108,6 +125,8 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
         return await reorderStashFolders(msg);
       case 'deleteStashItem':
         return await deleteStashItem(msg);
+      case 'renameStashItem':
+        return await renameStashItem(msg);
       case 'reorderStashItems':
         return await reorderStashItems(msg);
       case 'saveGroupToStash':
@@ -410,6 +429,20 @@ async function newTabInGroup(
   return { ok: true };
 }
 
+async function renameTab(msg: Extract<Message, { type: 'renameTab' }>): Promise<MessageResponse> {
+  const name = validAliasName(msg.name);
+  await withWindow(msg.chromeWindowId, (state) => {
+    const located = findTabRef(state, msg.tabRefId);
+    if (!located) throw new Error(`tab ${msg.tabRefId} not found`);
+    if (name === undefined) {
+      delete located.tab.name;
+    } else {
+      located.tab.name = name;
+    }
+  });
+  return { ok: true };
+}
+
 // ---------- Stash ----------
 
 async function createStashFolder(
@@ -493,6 +526,24 @@ async function deleteStashItem(
   return { ok: true };
 }
 
+async function renameStashItem(
+  msg: Extract<Message, { type: 'renameStashItem' }>,
+): Promise<MessageResponse> {
+  const name = validAliasName(msg.name);
+  await withAppData((data) => {
+    const folder = data.stash.find((f) => f.id === msg.folderId);
+    if (!folder) throw new Error(`stash folder ${msg.folderId} not found`);
+    const item = folder.items.find((i) => i.id === msg.itemId);
+    if (!item) throw new Error(`stash item ${msg.itemId} not found`);
+    if (name === undefined) {
+      delete item.name;
+    } else {
+      item.name = name;
+    }
+  });
+  return { ok: true };
+}
+
 async function reorderStashItems(
   msg: Extract<Message, { type: 'reorderStashItems' }>,
 ): Promise<MessageResponse> {
@@ -534,6 +585,7 @@ async function saveGroupToStash(
         title: t.title,
         favIconUrl: t.favIconUrl,
         addedAt: Date.now(),
+        ...(t.name ? { name: t.name } : {}),
       })),
       createdAt: Date.now(),
     };
@@ -575,6 +627,7 @@ async function saveTabToStash(
       title: tab.title,
       favIconUrl: tab.favIconUrl,
       addedAt: Date.now(),
+      ...(tab.name ? { name: tab.name } : {}),
     };
   });
 
@@ -643,17 +696,22 @@ async function openStashItem(
         try {
           await chrome.tabs.update(activeTab.id, { url: target.url });
         } catch {
+          if (target.name) reservePendingTabAlias(msg.chromeWindowId, target.name);
           await chrome.tabs.create({ url: target.url, windowId: msg.chromeWindowId });
         }
       } else {
+        if (target.name) reservePendingTabAlias(msg.chromeWindowId, target.name);
         await chrome.tabs.create({ url: target.url, windowId: msg.chromeWindowId });
       }
       break;
     }
     case 'new-tab':
+      if (target.name) reservePendingTabAlias(msg.chromeWindowId, target.name);
       await chrome.tabs.create({ url: target.url, windowId: msg.chromeWindowId });
       break;
     case 'new-window':
+      // The new tab lands in a brand-new window; we don't know its id in
+      // advance, so name propagation is best-effort skipped here.
       await chrome.windows.create({ url: target.url });
       break;
   }
@@ -688,8 +746,15 @@ async function openStashFolderAsGroup(
     });
   });
 
-  // 3. Reserve N route slots so subsequent onCreated events route into the group.
-  reservePendingTabRoute(msg.targetChromeWindowId, newGroupId, safeItems.length);
+  // 3. Reserve one slot per item with the target group and (optional) alias.
+  // FIFO order: each subsequent onCreated consumes one slot.
+  pushPendingTabSlots(
+    msg.targetChromeWindowId,
+    safeItems.map((item) => ({
+      groupId: newGroupId,
+      ...(item.name ? { name: item.name } : {}),
+    })),
+  );
 
   // 4. Open every item. Don't wait for full load; just kick off create().
   for (const item of safeItems) {

@@ -60,6 +60,8 @@ const ja: Record<MessageKey, string> = {
   'tab.save_to_stash_title': 'スタッシュに保存',
   'tab.save_to_stash_aria': 'スタッシュに保存',
   'tab.close_live_title': 'タブを閉じる',
+  'tab.menu_aria': 'その他の操作',
+  'tab.menu_rename': '名前を変更',
 
   // ---------- Stash ----------
   'stash.empty_title': 'スタッシュは空です',
@@ -74,6 +76,8 @@ const ja: Record<MessageKey, string> = {
     'スタッシュフォルダ「{name}」とその {count} 個のアイテムを削除しますか？',
   'stash.item_remove_title': 'スタッシュから削除',
   'stash.item_remove_aria': 'スタッシュから削除',
+  'stash.item_menu_aria': 'その他の操作',
+  'stash.item_menu_rename': '名前を変更',
   'stash.new_folder_button': '新規フォルダ',
   'stash.new_folder_title': '新しいフォルダを作成',
 
