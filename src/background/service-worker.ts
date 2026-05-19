@@ -56,68 +56,11 @@ chrome.runtime.onStartup.addListener(() => {
   void recoverOnStartup();
 });
 
-// Side panel opens via toolbar-icon click.
+// Side panel opens via toolbar-icon click (and via the `_execute_action`
+// keyboard shortcut, which Chrome dispatches as a synthetic action click).
 void chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((e) => console.error('[side-tab] setPanelBehavior failed', e));
-
-// ---------- Side panel toggle (keyboard command) ----------
-
-/**
- * Open panels register a runtime port so the SW knows which windows currently
- * have the side panel open. The Chrome side-panel API has no programmatic
- * "close"; we tell the panel page to call window.close() on itself.
- */
-const openPanelPorts = new Map<number, chrome.runtime.Port>();
-
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'sidepanel') return;
-
-  let windowId: number | null = null;
-
-  port.onMessage.addListener((msg: unknown) => {
-    if (
-      msg &&
-      typeof msg === 'object' &&
-      (msg as { type?: unknown }).type === 'hello'
-    ) {
-      const id = (msg as { chromeWindowId?: unknown }).chromeWindowId;
-      if (typeof id === 'number') {
-        windowId = id;
-        openPanelPorts.set(id, port);
-      }
-    }
-  });
-
-  port.onDisconnect.addListener(() => {
-    if (windowId !== null && openPanelPorts.get(windowId) === port) {
-      openPanelPorts.delete(windowId);
-    }
-  });
-});
-
-chrome.commands.onCommand.addListener((command) => {
-  if (command !== 'toggle-side-panel') return;
-  void toggleSidePanel();
-});
-
-async function toggleSidePanel(): Promise<void> {
-  const win = await chrome.windows.getCurrent();
-  if (win.id === undefined) return;
-  const existing = openPanelPorts.get(win.id);
-  if (existing) {
-    // Ask the panel to close itself.
-    try {
-      existing.postMessage({ type: 'close' });
-    } catch {
-      // Port already dead — fall through to open.
-      openPanelPorts.delete(win.id);
-      await chrome.sidePanel.open({ windowId: win.id });
-    }
-  } else {
-    await chrome.sidePanel.open({ windowId: win.id });
-  }
-}
 
 // ---------- Messages from UI ----------
 

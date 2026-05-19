@@ -7,8 +7,5 @@
   },
   "action_default_title": {
     "message": "打开 Srider"
-  },
-  "command_toggle_panel": {
-    "message": "切换 Srider 侧边栏"
   }
 }

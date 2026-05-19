@@ -10,9 +10,5 @@
   "action_default_title": {
     "message": "Open Srider",
     "description": "Tooltip on the toolbar icon."
-  },
-  "command_toggle_panel": {
-    "message": "Toggle Srider side panel",
-    "description": "Description for the keyboard shortcut in chrome://extensions/shortcuts."
   }
 }

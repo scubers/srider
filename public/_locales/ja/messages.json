@@ -7,8 +7,5 @@
   },
   "action_default_title": {
     "message": "Srider を開く"
-  },
-  "command_toggle_panel": {
-    "message": "Srider サイドパネルを切り替え"
   }
 }

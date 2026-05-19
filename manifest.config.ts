@@ -39,12 +39,15 @@ export default defineManifest({
     128: 'icons/icon-128.png',
   },
   commands: {
-    'toggle-side-panel': {
+    // The reserved `_execute_action` command fires the same path as clicking
+    // the toolbar icon (which we wire to open the side panel via
+    // chrome.sidePanel.setPanelBehavior). Keep the description omitted so
+    // Chrome falls back to "Activate the extension" / "激活该扩展程序".
+    _execute_action: {
       suggested_key: {
-        default: 'Ctrl+B',
-        mac: 'Command+B',
+        default: 'Alt+S',
+        mac: 'Alt+S',
       },
-      description: '__MSG_command_toggle_panel__',
     },
   },
 });
