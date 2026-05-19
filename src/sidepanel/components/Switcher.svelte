@@ -35,7 +35,9 @@
   .switcher {
     display: flex;
     gap: 4px;
-    padding: 0 10px 6px;
+    /* Symmetric vertical padding so the gap above (Header pad-bottom + this
+       pad-top) matches the gap below (this pad-bottom + StatsBar margin-top). */
+    padding: 6px 10px;
     background: var(--bg);
   }
 
