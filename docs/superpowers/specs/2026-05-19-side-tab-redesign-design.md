@@ -6,6 +6,8 @@
 
 ## 0. 背景与动机
 
+> **2026-05-26 修订**:本节"跨重启 = 重来"的决定已被 [`2026-05-26-restart-group-recovery-design.md`](2026-05-26-restart-group-recovery-design.md) 局部修订。该方案通过 write-through 镜像 + 仅启动时的一次性窗口匹配,把 Chrome 自己重开的 live tab 按上一会话归位,**不**重新引入 saved tab,也**不**在运行期做增量窗口匹配(故避开下文那个 bug 的整类问题)。
+
 原 spec 采用 per-window `WindowState` + UUID + Jaccard 指纹的方案,在实际使用中暴露关键 bug:打开新窗口时 `matchWindows` 全量 reset 所有 `chromeWindowId` 而只重建新窗口的对应字段,导致已存在的窗口"无家可归",新窗口可能错配旧窗口的分组(原 spec §6.6 / §6.8 设计的全量匹配语义在"只传一个新 snapshot"的调用路径上是错的)。
 
 深入讨论后确认:
