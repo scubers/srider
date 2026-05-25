@@ -9,8 +9,13 @@
  *
  * The previous UUID + Jaccard window-matching mechanism is gone. Windows are
  * referenced by Chrome's own `chromeWindowId` (a number) for the duration of
- * the browser session. To persist anything across browser restart, the user
- * saves it to Stash.
+ * the browser session. Live tabs themselves come back across a browser restart
+ * via Chrome's own "continue where you left off" session restore; to bring the
+ * *organization* back with them (group names, membership, tab aliases) we
+ * additionally mirror each window's structure to chrome.storage.local as a
+ * `SessionMirror` and best-effort re-bind the restored tabs on startup by URL
+ * matching (see 2026-05-26-restart-group-recovery-design.md). Anything the user
+ * wants kept regardless of whether Chrome reopens the tab still goes to Stash.
  */
 
 export const SCHEMA_VERSION = 2 as const;
@@ -71,6 +76,14 @@ export interface WindowState {
 /** Session storage shape. */
 export interface SessionData {
   windows: Record<ChromeWindowId, WindowState>;
+  /**
+   * Set the first time startup rehydration runs in a browser session. Because
+   * chrome.storage.session is wiped on browser restart but survives SW
+   * recycling, its presence distinguishes "SW woke mid-session (live state is
+   * authoritative, don't re-rehydrate)" from "fresh browser session (rebuild
+   * from the mirror)". See session-restore.ts / tab-handlers.recoverOnStartup.
+   */
+  rehydratedAt?: number;
 }
 
 /**
@@ -103,6 +116,46 @@ export interface AppData {
   schemaVersion: number;
 }
 
+/**
+ * Cross-restart structure mirror (chrome.storage.local, key `sessionMirror`).
+ *
+ * A write-through projection of the live per-window `SessionData`, holding only
+ * the skeleton needed to rebuild grouping after a browser restart. It stores no
+ * ids that change across restart (`chromeTabId` / `chromeWindowId` / `TabRef.id`
+ * / `Group.id`) — windows are re-associated by URL-set matching, tabs by URL.
+ * UI never reads this; it exists purely for startup rehydration.
+ */
+export interface SessionMirror {
+  /** Order is irrelevant — windows are matched by URL set, not position. */
+  windows: MirrorWindow[];
+  /** Equals SCHEMA_VERSION at write time; a mismatch on read discards the mirror. */
+  schemaVersion: number;
+  updatedAt: number;
+}
+
+export interface MirrorWindow {
+  /** Order = display order. */
+  groups: MirrorGroup[];
+  /** Order = display order. Present only to restore aliases on untracked tabs. */
+  untracked: MirrorTab[];
+}
+
+export interface MirrorGroup {
+  name: string;
+  collapsed: boolean;
+  kind: GroupKind;
+  /** Only for kind === 'auto-domain'. */
+  autoDomain?: string;
+  /** Order = in-group order. */
+  tabs: MirrorTab[];
+}
+
+export interface MirrorTab {
+  url: string;
+  /** Alias; absent/empty means none. */
+  name?: string;
+}
+
 export type Theme = 'light' | 'dark' | 'system';
 export type StashClickBehavior = 'current-tab' | 'new-tab' | 'new-window';
 export type Locale = 'en' | 'zh' | 'ja';
@@ -131,6 +184,10 @@ export function emptyAppData(): AppData {
 
 export function emptySessionData(): SessionData {
   return { windows: {} };
+}
+
+export function emptySessionMirror(): SessionMirror {
+  return { windows: [], schemaVersion: SCHEMA_VERSION, updatedAt: 0 };
 }
 
 export function emptyWindowState(chromeWindowId: ChromeWindowId): WindowState {

@@ -132,39 +132,49 @@ interface MirrorTab {
 
 ## 7. 启动重水合
 
-替换 `tab-handlers.ts` 中 `recoverOnStartup` 的函数体；保留 `recoverOncePromise` 单次守卫与 `recoverOnInstall` 复用。
+重写 `tab-handlers.ts` 的 `recoverOnStartup` 函数体；保留 `recoverOnInstall` 复用。
+
+**关键:区分「浏览器全新会话」与「SW 半途被回收又醒来」。** `recoverOnStartup` 在每次 SW 冷启动都会跑(service-worker.ts 顶层防御性调用 + onStartup + onInstalled),不止浏览器重启。用 `SessionData.rehydratedAt` 区分两种情形——它存在 `chrome.storage.session`(浏览器重启清空、SW 回收存活):
+
+- **fresh session**(`rehydratedAt` 缺省):跑窗口匹配 + 重水合,**权威覆写**所有重开窗口。覆写安全——`getAll` 给的是完整 live tab 集,即使 racing 的 `onCreated` 抢先把窗口建进 untracked,结果也收敛(Case 15)。写完置 `rehydratedAt`,**与窗口重建在同一个 `setSessionData` 里**(原子;若拆成单独/更早的写会重新引入 clobber-on-recycle)。
+- **mid-session**(`rehydratedAt` 已存在):**完全不做窗口匹配**(遵守 §0/§2「运行期开新窗口不匹配」)。已跟踪的窗口跳过不动;SW 死亡期间新开、尚未跟踪的窗口按 plain untracked 落地——绝不让它继承别的窗口的分组拷贝。
 
 ```text
-rehydrateOnStartup():
-  mirror = await getSessionMirror()            // local；缺省/schema 不符 → 空
+recoverOnStartup():
+  if (recoverOncePromise) return it                 // 单 SW 生命周期只跑一次
+  mirror = await getSessionMirror()                 // local;缺省/schema/结构不符 → 空
   chromeWindows = await chrome.windows.getAll({ populate: true })
+  reopened = normalize(chromeWindows)               // {id, tabs:[{chromeTabId,url,title,favIconUrl}]}
   await withSessionData(data => {
-    reopened = chromeWindows
-      .filter(w => w.id !== undefined)
-      .map(w => ({ id: w.id, tabs: (w.tabs ?? []).filter(hasId) }))
-    matches = matchWindows(reopened, mirror.windows, WINDOW_MATCH_THRESHOLD)
-              // → Map<chromeWindowId, MirrorWindow>
+    fresh = data.rehydratedAt === undefined
+    matches = fresh ? matchWindows(reopened, mirror.windows, WINDOW_MATCH_THRESHOLD) : null
     for (w of reopened):
-      mw = matches.get(w.id)
-      data.windows[w.id] = mw
-        ? rebindWindow(w, mw)                   // §4.2
-        : { chromeWindowId: w.id, groups: [], untrackedTabs: w.tabs.map(t => makeTabRef(t)) }
+      if (!fresh && data.windows[w.id]) continue    // mid-session:不碰已跟踪窗口
+      mw = matches?.get(w.id)
+      data.windows[w.id] = mw ? rebindWindow(w, mw)                                  // §4.2
+                              : { chromeWindowId:w.id, groups:[],
+                                  untrackedTabs: w.tabs.map(tabRefFromReopened) }
+    if (fresh) data.rehydratedAt = now()
   })
+  cancelMirrorFlush()                               // 不让重水合自己的写回灌镜像(见下)
+  // recoverOncePromise 不缓存 rejected promise:失败时重置,允许后续重试
 ```
 
-- **覆写语义**：整段在 session 写队列内持锁运行，用 `getAll` 的权威 tab 列表直接覆写 `data.windows[id]`。无论 racing 的 `onCreated`/`handleWindowCreated` 是否抢先建过窗口，结果都收敛（Case 15）。
-- **id 一致性**：重水合用 `getAll` 的 `tab.id` 建 TabRef，与 Chrome 后续事件里的 `chromeTabId` 一致，故晚到的 `onCreated`/`onUpdated` 命中已存在 TabRef 只刷新字段（沿用现有 `findTabInState` guard）。
+- **不回灌镜像**:重水合是「从镜像重建」,其 session 写会触发 debounced flush;若放任,会把(必然有损的——丢了没重开的窗口、重定向 tab)重建结果投影回去、盖掉原本更全的镜像,劣化下次重启。故重水合后立即 `cancelMirrorFlush()`;镜像只由启动后真实的用户/Chrome 变更重写。
+- **失败可重试**:`recoverOncePromise` 不缓存 rejected promise——`getAll`/storage 偶发失败时把它重置回 `null`,否则该 SW 生命周期内恢复会被永久禁用(只有它会置 `rehydratedAt`)。
+- **id 一致性**:重水合用 `getAll` 的 `tab.id` 建 TabRef,与后续事件的 `chromeTabId` 一致,晚到的 `onCreated`/`onUpdated` 命中已存在 TabRef 只刷新字段(沿用现有 `findTabInState` guard)。
 
 ## 8. 改动清单（A 的卖点：基本只动后台启动路径）
 
 | 文件 | 改动 |
 |---|---|
 | `src/shared/types.ts` | 新增 `SessionMirror` / `MirrorWindow` / `MirrorGroup` / `MirrorTab`（纯加法）；更新顶部注释中"跨重启只能靠 Stash"的措辞 |
-| `src/shared/storage.ts` | 新增 `getSessionMirror()` / `setSessionMirror()`（local，key `sessionMirror`；读时 schema 不符返回空） |
+| `src/shared/types.ts` | 另新增 `SessionData.rehydratedAt?`（启动重水合的会话标记，见 §7） |
+| `src/shared/storage.ts` | 新增 `getSessionMirror()` / `setSessionMirror()`（local，key `sessionMirror`；读时 schema 或结构不符返回空） |
 | `src/shared/url.ts` | 新增 `sameTabUrl(a, b)`（v1 精确相等） |
-| `src/background/write-queue.ts` | `withSessionData` 落盘后挂 `scheduleMirrorFlush()`；实现 debounced flush + 纯函数 `projectToMirror(SessionData): SessionMirror` |
-| **新文件** `src/background/session-restore.ts` | 纯函数 `matchWindows()` / `rebindWindow()` / `consumeFromPool()`（隔离脆弱逻辑，便于单测） |
-| `src/background/tab-handlers.ts` | `recoverOnStartup` 改为调用上面这套；`makeTabRef` 扩展可选 `name` 参数 |
+| `src/background/write-queue.ts` | `withSessionData` 落盘后挂 `scheduleMirrorFlush()`；debounced flush + 导出 `flushSessionMirror()` / `cancelMirrorFlush()`；`projectToMirror` 放在 session-restore.ts |
+| **新文件** `src/background/session-restore.ts` | 纯函数 `projectToMirror()` / `matchWindows()` / `rebindWindow()` / `consumeFromPool()` / `tabRefFromReopened()`（隔离脆弱逻辑，便于单测） |
+| `src/background/tab-handlers.ts` | `recoverOnStartup` 重写为重水合（fresh/mid-session 分流 + 不回灌镜像 + 失败可重试）；TabRef 由 session-restore 的 `tabRefFromReopened` 构建（`makeTabRef` 不变） |
 | **不动** | `service-worker.ts`、`message-handlers.ts`、所有 `sidepanel`/`options` UI、`stores.svelte.ts`、i18n、`manifest.config.ts` |
 
 无需新增权限：已有的 tab 元数据读取（`tab.url`/`tab.title`）足够。
@@ -207,6 +217,8 @@ rehydrateOnStartup():
 2. **重定向 / 动态 query 页**（Case 12）：精确匹配下会落 untracked。可通过将来升级 `sameTabUrl` 缓解。
 3. **最后 <300ms 结构变化丢失**：SW 在 debounce 落盘前死亡的小窗口。可接受。
 4. **镜像配额**：仅 URL + 别名 + 组元信息，远小于 local 10MB 额度。
+5. **启动时 `getAll` 懒恢复**：若 Chrome 在 onStartup 时尚未把全部恢复窗口/标签页 materialize 完，重水合会漏掉它们——漏掉的窗口当全新窗口(untracked)，漏掉的 tab 落 untracked。概率低(`getAll({populate})` 通常已给出完整窗口列表)，不丢数据，只是该次 grouping 不全。下次重启用同一镜像仍可恢复(已抑制重水合回灌镜像，见 §7，故镜像不会被这次不全的结果劣化)。
+6. **重水合 ↔ onCreated 快照竞态**：fresh session 下用 `getAll` 快照权威覆写；极小概率下，在快照与 `withSessionData` 提交之间新建的 tab 会被覆写掉且不自愈(窗口极窄，仅启动瞬间)。可接受;若实测有问题，可在锁内补一次 `chrome.tabs.query` 对账。
 
 ## 12. 后续可能演进（v1 不做）
 

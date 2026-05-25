@@ -70,3 +70,18 @@ export function extractGroupingDomain(url: string): string | null {
   // as the same domain for grouping purposes.
   return parsed.hostname.replace(/^www\./i, '');
 }
+
+/**
+ * Whether two tab URLs refer to "the same tab" for the purpose of re-binding a
+ * restored Chrome tab to its place in the session mirror (see session-restore.ts).
+ *
+ * v1: exact string equality. Chrome's session restore hands back each tab's last
+ * committed URL verbatim, so exact match already has a high hit rate, and it
+ * carries zero false-merge risk — the failure mode of looser matching (collapsing
+ * `…/watch?v=A` and `…/watch?v=B`, `…?id=1` and `…?id=2`) is worse than the
+ * occasional drifted URL that falls back to untracked. Kept as a single function
+ * so a future "exact → origin+path" relaxation is a localized change.
+ */
+export function sameTabUrl(a: string, b: string): boolean {
+  return a === b;
+}

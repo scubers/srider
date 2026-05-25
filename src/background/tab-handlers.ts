@@ -10,8 +10,17 @@
  */
 import type { ChromeWindowId, TabRef, WindowState } from '$shared/types';
 import { uuid } from '$shared/id';
-import { withSessionData, withWindow } from './write-queue';
+import { getSessionMirror } from '$shared/storage';
+import { withSessionData, withWindow, cancelMirrorFlush } from './write-queue';
 import { cleanupEmptyAutoGroups } from './group-cleanup';
+import {
+  matchWindows,
+  rebindWindow,
+  tabRefFromReopened,
+  WINDOW_MATCH_THRESHOLD,
+  type ReopenedTab,
+  type ReopenedWindow,
+} from './session-restore';
 
 const PENDING_ROUTE_TTL_MS = 5_000;
 
@@ -348,30 +357,81 @@ export async function handleWindowRemoved(chromeWindowId: ChromeWindowId): Promi
 let recoverOncePromise: Promise<void> | null = null;
 
 /**
- * Build WindowStates for every currently-open Chrome window. Idempotent per SW
- * lifetime: multiple calls share one promise so we don't repeat the work on
- * every cold wake.
+ * Build WindowStates for every currently-open Chrome window, rehydrating group
+ * structure from the cross-restart mirror where the reopened tabs match.
+ *
+ * Idempotent per SW lifetime (one shared promise). Across SW recycles within a
+ * browser session it must NOT clobber live session state, so it only rebuilds
+ * from the mirror on the first run of a browser session (detected via
+ * `SessionData.rehydratedAt`, which is wiped on restart but survives recycling).
+ * On the first run it overwrites authoritatively — `chrome.windows.getAll`
+ * yields the full live tab set, so the result is correct even if onCreated raced
+ * ahead and pre-populated a window with untracked-only tabs.
  */
 export function recoverOnStartup(): Promise<void> {
   if (recoverOncePromise) return recoverOncePromise;
-  recoverOncePromise = (async () => {
-    const chromeWindows = await chrome.windows.getAll({ populate: true });
+  const run = (async () => {
+    const [mirror, chromeWindows] = await Promise.all([
+      getSessionMirror(),
+      chrome.windows.getAll({ populate: true }),
+    ]);
+
+    const reopened: ReopenedWindow[] = [];
+    for (const w of chromeWindows) {
+      if (w.id === undefined) continue;
+      const tabs: ReopenedTab[] = (w.tabs ?? [])
+        .filter((t): t is chrome.tabs.Tab & { id: number } => t.id !== undefined)
+        .map((t) => ({
+          chromeTabId: t.id,
+          url: t.url || t.pendingUrl || '',
+          title: t.title || '',
+          favIconUrl: t.favIconUrl,
+        }));
+      reopened.push({ id: w.id, tabs });
+    }
+
     await withSessionData((data) => {
-      for (const w of chromeWindows) {
-        if (w.id === undefined) continue;
-        if (data.windows[w.id]) continue; // already populated (e.g., onCreated raced ahead)
-        const tabs = (w.tabs ?? []).filter(
-          (t): t is chrome.tabs.Tab & { id: number } => t.id !== undefined,
-        );
-        data.windows[w.id] = {
-          chromeWindowId: w.id,
-          groups: [],
-          untrackedTabs: tabs.map(makeTabRef),
-        };
+      const freshSession = data.rehydratedAt === undefined;
+      // Window matching runs ONLY on the first run of a browser session. On a
+      // mid-session SW wake we must never re-match: a window opened while the SW
+      // was dead must not inherit a copy of another window's groups (spec §0/§2,
+      // "运行期开新窗口完全不做匹配"). Such windows are seeded as plain untracked.
+      const matches = freshSession
+        ? matchWindows(reopened, mirror.windows, WINDOW_MATCH_THRESHOLD)
+        : null;
+      for (const w of reopened) {
+        // Mid-session wake: leave already-tracked windows untouched.
+        if (!freshSession && data.windows[w.id]) continue;
+        const mw = matches?.get(w.id) ?? null;
+        data.windows[w.id] = mw
+          ? rebindWindow(w, mw)
+          : {
+              chromeWindowId: w.id,
+              groups: [],
+              untrackedTabs: w.tabs.map((t) => tabRefFromReopened(t)),
+            };
       }
+      // `rehydratedAt` and the window rebuild MUST be written in this same
+      // setSessionData (one callback) — setting the marker in a separate/earlier
+      // write would reintroduce clobber-on-recycle.
+      if (freshSession) data.rehydratedAt = Date.now();
     });
+
+    // Don't let rehydration's own session write echo back into the mirror: we
+    // only *read* the mirror to rebuild state, and re-projecting that
+    // (necessarily lossy — dropped non-reopened windows, redirected tabs) over
+    // the good mirror would degrade the next restart. The mirror is rewritten
+    // only by genuine post-startup mutations.
+    cancelMirrorFlush();
   })();
-  return recoverOncePromise;
+  // Don't cache a rejected promise for the SW's lifetime — a transient
+  // getAll/storage failure would otherwise permanently disable recovery. Allow a
+  // later trigger to retry.
+  run.catch(() => {
+    if (recoverOncePromise === run) recoverOncePromise = null;
+  });
+  recoverOncePromise = run;
+  return run;
 }
 
 export function recoverOnInstall(): Promise<void> {

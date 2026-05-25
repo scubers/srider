@@ -9,6 +9,7 @@
 import {
   type AppData,
   type SessionData,
+  type SessionMirror,
   type Settings,
   type ChromeWindowId,
   type WindowState,
@@ -16,11 +17,13 @@ import {
   SCHEMA_VERSION,
   emptyAppData,
   emptySessionData,
+  emptySessionMirror,
 } from './types';
 
 const APP_DATA_KEY = 'appData';
 const SETTINGS_KEY = 'settings';
 const SESSION_DATA_KEY = 'sessionData';
+const SESSION_MIRROR_KEY = 'sessionMirror';
 
 // ---------- AppData (chrome.storage.local) ----------
 
@@ -104,6 +107,28 @@ export async function getWindowState(
 ): Promise<WindowState | null> {
   const data = await getSessionData();
   return data.windows[chromeWindowId] ?? null;
+}
+
+// ---------- SessionMirror (chrome.storage.local) ----------
+//
+// Write-through projection of SessionData used only to rehydrate grouping after
+// a browser restart. Lives in `local` (survives restart) under its own key, so
+// it never races AppData/Stash writes. See session-restore.ts.
+
+export async function getSessionMirror(): Promise<SessionMirror> {
+  const result = await chrome.storage.local.get(SESSION_MIRROR_KEY);
+  const raw = result[SESSION_MIRROR_KEY] as SessionMirror | undefined;
+  // Schema mismatch or a structurally-invalid cache → treat as absent (cache
+  // semantics, not data loss). The shape check is belt-and-suspenders so a
+  // corrupted entry can't throw inside startup rehydration.
+  if (!raw || raw.schemaVersion !== SCHEMA_VERSION || !Array.isArray(raw.windows)) {
+    return emptySessionMirror();
+  }
+  return raw;
+}
+
+export async function setSessionMirror(mirror: SessionMirror): Promise<void> {
+  await chrome.storage.local.set({ [SESSION_MIRROR_KEY]: mirror });
 }
 
 // ---------- Settings (chrome.storage.sync) ----------

@@ -15,8 +15,10 @@ import {
   setAppData,
   getSessionData,
   setSessionData,
+  setSessionMirror,
 } from '$shared/storage';
 import type { AppData, SessionData, WindowState } from '$shared/types';
+import { projectToMirror } from './session-restore';
 
 // ---------- AppData chain ----------
 
@@ -47,6 +49,7 @@ export function withSessionData<T>(
     const data = await getSessionData();
     const result = await fn(data);
     await setSessionData(data);
+    scheduleMirrorFlush();
     return result;
   });
   sessionChain = next.then(
@@ -55,6 +58,51 @@ export function withSessionData<T>(
   );
   return next;
 }
+
+// ---------- Cross-restart mirror (write-through, debounced) ----------
+//
+// Every session write schedules a debounced flush that projects the latest
+// SessionData into chrome.storage.local (key `sessionMirror`). Debouncing
+// collapses bursts (e.g. onUpdated during navigation) into one write and is
+// naturally last-write-wins, so no separate serialization chain is needed —
+// `sessionMirror` is a different key from AppData/Stash. The mirror is only
+// consumed at startup (session-restore.ts); losing the last <debounce window of
+// structural changes if the SW dies before flushing is acceptable.
+
+const MIRROR_FLUSH_DEBOUNCE_MS = 300;
+let mirrorFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleMirrorFlush(): void {
+  if (mirrorFlushTimer !== null) clearTimeout(mirrorFlushTimer);
+  mirrorFlushTimer = setTimeout(() => {
+    mirrorFlushTimer = null;
+    void flushSessionMirror();
+  }, MIRROR_FLUSH_DEBOUNCE_MS);
+}
+
+/** Project current SessionData into the mirror immediately. */
+export async function flushSessionMirror(): Promise<void> {
+  const data = await getSessionData();
+  await setSessionMirror(projectToMirror(data));
+}
+
+/**
+ * Cancel any pending debounced mirror flush. Used by startup rehydration (which
+ * must not echo its own reconstruction back into the mirror) and by tests (so a
+ * pending timer doesn't leak past teardown).
+ */
+export function cancelMirrorFlush(): void {
+  if (mirrorFlushTimer !== null) {
+    clearTimeout(mirrorFlushTimer);
+    mirrorFlushTimer = null;
+  }
+}
+
+// Exposed for tests.
+export const __testing__ = {
+  flushSessionMirror,
+  cancelMirrorFlush,
+};
 
 /**
  * Convenience: operate on one specific window's state. Creates an empty entry

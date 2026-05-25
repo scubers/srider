@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSafeNavigationUrl, isSafeFaviconUrl, extractGroupingDomain } from './url';
+import { isSafeNavigationUrl, isSafeFaviconUrl, extractGroupingDomain, sameTabUrl } from './url';
 
 describe('isSafeNavigationUrl', () => {
   it('allows http and https', () => {
@@ -74,5 +74,17 @@ describe('extractGroupingDomain', () => {
   it('returns null for unparseable input', () => {
     expect(extractGroupingDomain('not a url')).toBeNull();
     expect(extractGroupingDomain('')).toBeNull();
+  });
+});
+
+describe('sameTabUrl', () => {
+  it('matches byte-identical URLs', () => {
+    expect(sameTabUrl('https://example.com/a?x=1', 'https://example.com/a?x=1')).toBe(true);
+  });
+
+  it('treats differing query or fragment as different tabs (no false merge)', () => {
+    expect(sameTabUrl('https://youtube.com/watch?v=A', 'https://youtube.com/watch?v=B')).toBe(false);
+    expect(sameTabUrl('https://example.com/p', 'https://example.com/p#section')).toBe(false);
+    expect(sameTabUrl('https://example.com/p', 'https://example.com/p/')).toBe(false);
   });
 });
