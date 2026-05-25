@@ -4,7 +4,7 @@
  * Mutations to per-window state go through `withWindow / withSessionData`.
  * Mutations to Stash go through `withAppData`.
  */
-import { getAppData, getSessionData } from '$shared/storage';
+import { getAppData, getSessionData, getSettings } from '$shared/storage';
 import { uuid } from '$shared/id';
 import { extractGroupingDomain, isSafeNavigationUrl } from '$shared/url';
 import { formatAutoGroupName } from '$shared/group-naming';
@@ -154,6 +154,9 @@ export async function handleMessage(msg: Message): Promise<MessageResponse> {
 
 async function createGroup(msg: Extract<Message, { type: 'createGroup' }>): Promise<MessageResponse> {
   const name = validName(msg.name.trim() || 'New Group');
+  // Seed the new group's collapsed state from the user's "default expanded"
+  // preference instead of hardcoding it.
+  const { defaultGroupExpanded } = await getSettings();
   await withWindow(msg.chromeWindowId, (state) => {
     if (state.groups.length >= MAX_GROUPS_PER_WINDOW) {
       throw new Error(`too many groups (max ${MAX_GROUPS_PER_WINDOW})`);
@@ -161,7 +164,7 @@ async function createGroup(msg: Extract<Message, { type: 'createGroup' }>): Prom
     const group: Group = {
       id: uuid(),
       name,
-      collapsed: false,
+      collapsed: !defaultGroupExpanded,
       tabs: [],
       createdAt: Date.now(),
       kind: 'manual',

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isSafeFaviconUrl } from '$shared/url';
+  import { settingsStore } from '$shared/stores.svelte';
 
   let {
     src,
@@ -22,7 +23,11 @@
 
   const letter = $derived((host || '?').replace(/^www\./i, '').charAt(0).toUpperCase());
   const hue = $derived(hostHue(host || ''));
-  const safeSrc = $derived(src && isSafeFaviconUrl(src) ? src : null);
+  // When the user turns favicons off, always fall back to the colored letter
+  // tile (keeps row layout stable). Otherwise use the real favicon if safe.
+  const safeSrc = $derived(
+    settingsStore.value.showFavicons && src && isSafeFaviconUrl(src) ? src : null,
+  );
 
   // Falls back to the letter tile if the <img> fails to load.
   let imgFailed = $state(false);

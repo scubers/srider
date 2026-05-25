@@ -24,14 +24,17 @@ class SearchStore {
 
   /**
    * Returns true when no query is active OR when `tab` matches the query
-   * against either its title or its URL (case-insensitive substring).
+   * against its title, URL, or user-set alias (case-insensitive substring).
+   * The alias is included so a tab is findable by the `(name)` the user gave
+   * it — the same alias TabItem highlights via splitAliasHighlight.
    */
   match(tab: TabRef): boolean {
     if (!this.active) return true;
     const q = this.normalized;
     return (
       tab.title.toLowerCase().includes(q) ||
-      tab.url.toLowerCase().includes(q)
+      tab.url.toLowerCase().includes(q) ||
+      (tab.name?.toLowerCase().includes(q) ?? false)
     );
   }
 
