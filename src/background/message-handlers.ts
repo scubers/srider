@@ -276,6 +276,34 @@ async function activateLiveTab(
   return { ok: true };
 }
 
+/** True if Chrome still knows this tab id. */
+async function tabExists(chromeTabId: number): Promise<boolean> {
+  try {
+    await chrome.tabs.get(chromeTabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Self-healing for ghost rows: drop every TabRef bound to one of these dead
+ * chromeTabIds, across all windows (also clears stray duplicates).
+ */
+async function removeDeadTabRefs(deadChromeTabIds: number[]): Promise<void> {
+  if (deadChromeTabIds.length === 0) return;
+  const dead = new Set(deadChromeTabIds);
+  await withSessionData((data) => {
+    for (const state of Object.values(data.windows)) {
+      for (const g of state.groups) {
+        g.tabs = g.tabs.filter((t) => !dead.has(t.chromeTabId));
+      }
+      state.untrackedTabs = state.untrackedTabs.filter((t) => !dead.has(t.chromeTabId));
+      cleanupEmptyAutoGroups(state);
+    }
+  });
+}
+
 async function closeLiveTab(
   msg: Extract<Message, { type: 'closeLiveTab' }>,
 ): Promise<MessageResponse> {
@@ -284,8 +312,21 @@ async function closeLiveTab(
   if (!state) return { ok: false, error: 'window not found' };
   const located = findTabRef(state, msg.tabRefId);
   if (!located) return { ok: false, error: 'tab not found' };
-  await chrome.tabs.remove(located.tab.chromeTabId);
-  return { ok: true };
+  const chromeTabId = located.tab.chromeTabId;
+  try {
+    await chrome.tabs.remove(chromeTabId);
+    // State cleanup is onRemoved's job on the success path.
+    return { ok: true };
+  } catch (e) {
+    if (await tabExists(chromeTabId)) {
+      // Transient failure (e.g. user mid-drag) — keep the row, surface the error.
+      throw e;
+    }
+    // The Chrome tab is already gone (ghost row from a missed event). The
+    // user's intent is "make this row go away" — prune it from state.
+    await removeDeadTabRefs([chromeTabId]);
+    return { ok: true };
+  }
 }
 
 async function addUrlToGroup(
@@ -300,8 +341,11 @@ async function addUrlToGroup(
   let favIconUrl: string | undefined;
 
   if (chromeTabId === undefined) {
-    const allTabs = await chrome.tabs.query({});
-    const match = allTabs.find((t) => t.url === msg.url && t.id !== undefined);
+    // Resolve within the target window ONLY. Matching across all windows can
+    // bind this TabRef to another window's tab — a cross-window duplicate
+    // that survives that tab's onRemoved as a permanent ghost row.
+    const windowTabs = await chrome.tabs.query({ windowId: msg.chromeWindowId });
+    const match = windowTabs.find((t) => t.url === msg.url && t.id !== undefined);
     if (match?.id !== undefined) {
       chromeTabId = match.id;
       title ??= match.title ?? undefined;
@@ -415,7 +459,19 @@ async function closeAllInGroup(
 
   const liveTabIds = container.map((t) => t.chromeTabId);
   if (liveTabIds.length === 0) return { ok: true };
-  await chrome.tabs.remove(liveTabIds);
+
+  // Remove one-by-one: a single dead id would reject the whole batch call and
+  // leave every other tab open (one ghost row poisons "close all").
+  const results = await Promise.allSettled(liveTabIds.map((id) => chrome.tabs.remove(id)));
+  const failed = liveTabIds.filter((_, i) => results[i].status === 'rejected');
+  if (failed.length > 0) {
+    // Failures are either ghosts (tab already gone → prune the row) or
+    // transient; one query distinguishes them in a single round-trip.
+    const liveNow = new Set(
+      (await chrome.tabs.query({})).map((t) => t.id).filter((id) => id !== undefined),
+    );
+    await removeDeadTabRefs(failed.filter((id) => !liveNow.has(id)));
+  }
   return { ok: true };
 }
 

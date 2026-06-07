@@ -137,7 +137,7 @@ interface MirrorTab {
 **关键:区分「浏览器全新会话」与「SW 半途被回收又醒来」。** `recoverOnStartup` 在每次 SW 冷启动都会跑(service-worker.ts 顶层防御性调用 + onStartup + onInstalled),不止浏览器重启。用 `SessionData.rehydratedAt` 区分两种情形——它存在 `chrome.storage.session`(浏览器重启清空、SW 回收存活):
 
 - **fresh session**(`rehydratedAt` 缺省):跑窗口匹配 + 重水合,**权威覆写**所有重开窗口。覆写安全——`getAll` 给的是完整 live tab 集,即使 racing 的 `onCreated` 抢先把窗口建进 untracked,结果也收敛(Case 15)。写完置 `rehydratedAt`,**与窗口重建在同一个 `setSessionData` 里**(原子;若拆成单独/更早的写会重新引入 clobber-on-recycle)。
-- **mid-session**(`rehydratedAt` 已存在):**完全不做窗口匹配**(遵守 §0/§2「运行期开新窗口不匹配」)。已跟踪的窗口跳过不动;SW 死亡期间新开、尚未跟踪的窗口按 plain untracked 落地——绝不让它继承别的窗口的分组拷贝。
+- **mid-session**(`rehydratedAt` 已存在):**完全不做窗口匹配**(遵守 §0/§2「运行期开新窗口不匹配」)。已跟踪的窗口跳过不动(指**不从镜像重建组结构**;末尾的自愈对账照常作用于它们);SW 死亡期间新开、尚未跟踪的窗口按 plain untracked 落地——绝不让它继承别的窗口的分组拷贝。
 
 ```text
 recoverOnStartup():
@@ -155,6 +155,8 @@ recoverOnStartup():
                               : { chromeWindowId:w.id, groups:[],
                                   untrackedTabs: w.tabs.map(tabRefFromReopened) }
     if (fresh) data.rehydratedAt = now()
+    live = await chrome.tabs.query({})              // 同一序列化写内重新取活集
+    reconcileSessionData(data, live)                // 自愈对账:死 id/重复/错位/死窗口(redesign spec §4.9)
   })
   cancelMirrorFlush()                               // 不让重水合自己的写回灌镜像(见下)
   // recoverOncePromise 不缓存 rejected promise:失败时重置,允许后续重试
@@ -163,6 +165,7 @@ recoverOnStartup():
 - **不回灌镜像**:重水合是「从镜像重建」,其 session 写会触发 debounced flush;若放任,会把(必然有损的——丢了没重开的窗口、重定向 tab)重建结果投影回去、盖掉原本更全的镜像,劣化下次重启。故重水合后立即 `cancelMirrorFlush()`;镜像只由启动后真实的用户/Chrome 变更重写。
 - **失败可重试**:`recoverOncePromise` 不缓存 rejected promise——`getAll`/storage 偶发失败时把它重置回 `null`,否则该 SW 生命周期内恢复会被永久禁用(只有它会置 `rehydratedAt`)。
 - **id 一致性**:重水合用 `getAll` 的 `tab.id` 建 TabRef,与后续事件的 `chromeTabId` 一致,晚到的 `onCreated`/`onUpdated` 命中已存在 TabRef 只刷新字段(沿用现有 `findTabInState` guard)。
+- **自愈对账**:重建写入的 id 来自函数开头的 `getAll` 快照——快照与写入之间被关闭的 tab 会以死 id 落进 state。回调末尾在**同一次序列化写内**重新 `tabs.query({})` 并跑 `reconcileSessionData`(`src/background/reconcile.ts`),清死 id / 重复 / 错位 / 死窗口;它同时是所有「事件 miss」类幽灵行的兜底,fresh 与 mid-session 都执行(见 redesign spec §4.9)。
 
 ## 8. 改动清单（A 的卖点：基本只动后台启动路径）
 

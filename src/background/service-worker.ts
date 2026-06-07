@@ -9,6 +9,7 @@ import {
   handleTabCreated,
   handleTabRemoved,
   handleTabUpdated,
+  handleTabReplaced,
   handleTabAttached,
   handleWindowCreated,
   handleWindowRemoved,
@@ -30,6 +31,14 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   void handleTabUpdated(tabId, changeInfo, tab);
+});
+
+// Tab replaced by another tab (discard/restore, search prerender): the old id
+// dies with NO onRemoved and the new id appears with NO onCreated. Without
+// this rebind the TabRef keeps pointing at the dead id and becomes a ghost
+// row that can never be closed.
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  void handleTabReplaced(addedTabId, removedTabId);
 });
 
 chrome.tabs.onAttached.addListener((tabId, attachInfo) => {

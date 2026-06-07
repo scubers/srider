@@ -163,7 +163,8 @@ chrome.runtime.onStartup / onInstalled
 ### 4.1 Tab 事件
 - **onCreated**:找 WindowState by `tab.windowId`,不存在则同步建。检查 `pendingNewTabRoute`(命中 → 入指定 group;否则 untracked)。**无 pendingOpens(saved 重开)分支**。
 - **onRemoved**:找到 TabRef → 直接删除。**无 pin 分支**。仍 `cleanupEmptyAutoGroups`。
-- **onAttached**(跨窗口拖):源 WindowState 删 TabRef → 目标 `untrackedTabs.push`。
+- **onReplaced**(tab discard/restore、搜索预渲染):旧 chromeTabId 死亡**不发 onRemoved**,新 id 出现**不发 onCreated**。SW 必须把 TabRef.chromeTabId **原位重绑**到新 id(保位置、保 alias);若新 id 已被跟踪,旧 id 条目按重复删除。不处理它 = TabRef 永久指向死 id,成为幽灵行(见 4.9)。
+- **onAttached**(跨窗口拖):源 WindowState 删 TabRef → 目标 `untrackedTabs.push`。push 前先清掉目标窗口中同 chromeTabId 的已有 TabRef——拖出成新窗口时 `windows.onCreated` 的 `tabs.query` 可能抢先 seed 一份;不清就是重复条目(onRemoved 只删第一个匹配,另一份成幽灵行)。
 
 ### 4.2 窗口事件
 - **onCreated**:同步建 emptyWindowState + 填 untracked。**不需要 windowBuffers / NEW_WINDOW_SETTLE_MS**。
@@ -218,8 +219,20 @@ SW msg { type: 'openStashFolderAsGroup', folderId, targetWindowId }
 
 ### 4.8 拖拽
 - 跨 group / 进 untracked:与旧 spec 一致,删 pin 分支
-- 从 Chrome 标签栏拖入:与旧 spec 一致
+- 从 Chrome 标签栏拖入:与旧 spec 一致;URL→tab 解析**只查目标窗口**(`tabs.query({windowId})`)。全局查会把 TabRef 绑到别的窗口的同 URL tab——跨窗口重复条目,那个 tab 关闭时 onRemoved 的 fast path 只清真实窗口的,本窗口的成幽灵行(见 4.9)。
 - 不支持 stash item 拖入 group(点击 / 菜单替代,UI 设计简化)
+
+### 4.9 幽灵行自愈(ghost-row self-healing)
+
+会话层是 Chrome tabs 的**事件驱动镜像**,隐含假设「每个 tab 的消失都恰好产生一次被成功处理的事件」。任何一次 miss——SW 在分发间隙被杀、旧版本未监听 onReplaced、重复 TabRef 而 onRemoved 只删第一个匹配——都会留下指向死 chromeTabId 的 TabRef:侧边栏里一行「Chrome tab 已经没了却怎么都关不掉」的幽灵。三层防御,缺一不可:
+
+1. **堵注入**:onReplaced 原位重绑(4.1);onAttached 目标窗口去重(4.1);addUrlToGroup 限窗口解析(4.8)。
+2. **冷启动对账**(`src/background/reconcile.ts`):`recoverOnStartup` 在同一次序列化写的末尾重新 `tabs.query({})` 取活集,恢复三条不变量——
+   - 每个 `TabRef.chromeTabId` 指向活 tab(死的删);
+   - 一个 chromeTabId 只有一个 TabRef(重复合并:实际窗口优先 > 组内优先 > 先到先得);
+   - TabRef 必须在 tab 实际所在窗口的 state 里(错位的迁回实际窗口 untracked)。
+   顺带清死窗口 state、空 auto 组。**fresh 与 mid-session 都跑**——mid-session 的「不碰已跟踪窗口」只指不从镜像重建组结构,对账照常。安全性:state 里存在 TabRef ⟸ 对应事件已处理 ⟸ tab 当时已存在;query 发生在其后,活集只可能「更新」不可能「滞后」,故不会误删刚创建 tab 的条目。
+3. **关闭路径兜底**:`closeLiveTab` 的 `tabs.remove` 失败后用 `tabs.get` 鉴别——tab 仍在(瞬时失败,如用户拖拽中)→ 保留条目、透传错误;已不在 → 该行就是幽灵,直接从 state 清掉(用户意图本来就是让它消失),返回 ok。`closeAllInGroup` **逐个** remove(批量调用遇一个死 id 整体 reject,一只幽灵会卡死整组「全部关闭」),失败 id 一次 query 鉴别后同样清理。
 
 ## 5. UI 布局
 

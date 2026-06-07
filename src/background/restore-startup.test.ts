@@ -29,6 +29,15 @@ interface FakeWindow {
 const sessionStore: { sessionData?: SessionData } = {};
 const localStore: { sessionMirror?: SessionMirror; appData?: AppData } = {};
 let reopenedWindows: FakeWindow[] = [];
+// The reconcile sweep re-queries live tabs inside the serialized write. By
+// default the live set is derived from `reopenedWindows`; tests can override
+// it to simulate tabs closed between the getAll snapshot and the write.
+let liveTabsOverride: Array<FakeTab & { windowId: number }> | null = null;
+
+function liveTabs(): Array<FakeTab & { windowId: number }> {
+  if (liveTabsOverride) return liveTabsOverride;
+  return reopenedWindows.flatMap((w) => w.tabs.map((t) => ({ ...t, windowId: w.id })));
+}
 
 function installMock() {
   (globalThis as unknown as { chrome: unknown }).chrome = {
@@ -55,7 +64,7 @@ function installMock() {
       onChanged: { addListener: () => {}, removeListener: () => {} },
     },
     tabs: {
-      query: async () => [],
+      query: async () => liveTabs(),
       onCreated: { addListener: () => {} },
       onRemoved: { addListener: () => {} },
       onUpdated: { addListener: () => {} },
@@ -90,6 +99,7 @@ beforeEach(() => {
   delete localStore.sessionMirror;
   delete localStore.appData;
   reopenedWindows = [];
+  liveTabsOverride = null;
   installMock();
   tabHandlers.resetRecover();
 });
@@ -302,6 +312,87 @@ describe('recoverOnStartup — rehydration', () => {
       ['https://a.com', 1],
       ['https://b.com', 2],
     ]);
+    expect(w.untrackedTabs).toHaveLength(0);
+  });
+});
+
+describe('recoverOnStartup — reconcile sweep (self-healing)', () => {
+  it('removes ghost TabRefs with dead chromeTabIds on a mid-session SW wake', async () => {
+    // Tab 99 died while its onRemoved was lost (SW recycle race / replaced
+    // tab). The wake must prune it but keep live tab 9 and the group intact.
+    sessionStore.sessionData = {
+      rehydratedAt: 999,
+      windows: {
+        100: {
+          chromeWindowId: 100,
+          groups: [
+            {
+              id: 'g',
+              name: 'Work',
+              collapsed: false,
+              kind: 'manual',
+              createdAt: 0,
+              tabs: [
+                { id: 'live', url: 'https://a.com', title: 'A', chromeTabId: 9, addedAt: 0 },
+                { id: 'ghost', url: 'https://dead.com', title: 'D', chromeTabId: 99, addedAt: 0 },
+              ],
+            },
+          ],
+          untrackedTabs: [],
+        },
+      },
+    };
+    reopenedWindows = [win(100, [{ id: 9, url: 'https://a.com', title: 'A' }])];
+
+    await recoverOnStartup();
+
+    const w = sessionStore.sessionData!.windows[100];
+    expect(w.groups[0].name).toBe('Work');
+    expect(w.groups[0].tabs.map((t) => t.id)).toEqual(['live']);
+  });
+
+  it('removes WindowStates of windows closed while the SW was dead', async () => {
+    sessionStore.sessionData = {
+      rehydratedAt: 999,
+      windows: {
+        100: {
+          chromeWindowId: 100,
+          groups: [],
+          untrackedTabs: [{ id: 'a', url: 'https://a.com', title: 'A', chromeTabId: 9, addedAt: 0 }],
+        },
+        300: {
+          chromeWindowId: 300,
+          groups: [],
+          untrackedTabs: [{ id: 'z', url: 'https://z.com', title: 'Z', chromeTabId: 80, addedAt: 0 }],
+        },
+      },
+    };
+    reopenedWindows = [win(100, [{ id: 9, url: 'https://a.com' }])];
+
+    await recoverOnStartup();
+
+    expect(Object.keys(sessionStore.sessionData!.windows)).toEqual(['100']);
+  });
+
+  it('prunes tabs closed between the fresh-session getAll snapshot and the rebuild write', async () => {
+    // getAll saw tabs 1 and 2, but tab 2 was closed before the serialized
+    // write ran (its onRemoved found no TabRef yet, so only the sweep can
+    // catch it). The re-query inside the write returns only tab 1.
+    localStore.sessionMirror = mirror([
+      { groups: [manualGroup('Work', ['https://a.com', 'https://b.com'])], untracked: [] },
+    ]);
+    reopenedWindows = [
+      win(100, [
+        { id: 1, url: 'https://a.com', title: 'A' },
+        { id: 2, url: 'https://b.com', title: 'B' },
+      ]),
+    ];
+    liveTabsOverride = [{ id: 1, url: 'https://a.com', title: 'A', windowId: 100 }];
+
+    await recoverOnStartup();
+
+    const w = sessionStore.sessionData!.windows[100];
+    expect(w.groups[0].tabs.map((t) => [t.url, t.chromeTabId])).toEqual([['https://a.com', 1]]);
     expect(w.untrackedTabs).toHaveLength(0);
   });
 });

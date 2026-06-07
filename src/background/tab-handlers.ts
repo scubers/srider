@@ -13,6 +13,7 @@ import { uuid } from '$shared/id';
 import { getSessionMirror } from '$shared/storage';
 import { withSessionData, withWindow, cancelMirrorFlush } from './write-queue';
 import { cleanupEmptyAutoGroups } from './group-cleanup';
+import { reconcileSessionData, reconcileChangeCount } from './reconcile';
 import {
   matchWindows,
   rebindWindow,
@@ -247,6 +248,39 @@ export async function handleTabUpdated(
   });
 }
 
+/**
+ * Chrome replaced a tab's contents with another tab (tab discard/restore,
+ * search prerender). The old chromeTabId is dead WITHOUT an onRemoved, and the
+ * new id is live WITHOUT an onCreated — so the TabRef must be rebound in
+ * place or it becomes a permanent ghost row (close → "No tab with id").
+ */
+export async function handleTabReplaced(
+  addedTabId: number,
+  removedTabId: number,
+): Promise<void> {
+  await withSessionData((data) => {
+    // If the new id is somehow already tracked, every old-id ref is a
+    // duplicate; otherwise rebind the first old-id ref in place (keeping its
+    // position and alias) and drop any extra copies.
+    let rebound = findTabAcrossWindows(data.windows, addedTabId) !== null;
+    for (const state of Object.values(data.windows)) {
+      const sweep = (tabs: TabRef[]): TabRef[] =>
+        tabs.filter((t) => {
+          if (t.chromeTabId !== removedTabId) return true;
+          if (!rebound) {
+            t.chromeTabId = addedTabId;
+            rebound = true;
+            return true;
+          }
+          return false;
+        });
+      for (const g of state.groups) g.tabs = sweep(g.tabs);
+      state.untrackedTabs = sweep(state.untrackedTabs);
+      cleanupEmptyAutoGroups(state);
+    }
+  });
+}
+
 export async function handleTabAttached(
   chromeTabId: number,
   attachInfo: chrome.tabs.TabAttachInfo,
@@ -305,6 +339,17 @@ export async function handleTabAttached(
       };
       data.windows[attachInfo.newWindowId] = target;
     }
+    // handleWindowCreated may have raced ahead (drag-out-to-new-window) and
+    // seeded a fresh TabRef for this chromeTabId in the destination. Drop any
+    // such copy so the moved TabRef stays the only tracker — a duplicate
+    // would survive onRemoved (which deletes one match) as a ghost row.
+    for (const g of target.groups) {
+      g.tabs = g.tabs.filter((t) => t.chromeTabId !== chromeTabId);
+    }
+    target.untrackedTabs = target.untrackedTabs.filter(
+      (t) => t.chromeTabId !== chromeTabId,
+    );
+    cleanupEmptyAutoGroups(target);
     target.untrackedTabs.push(located.tab);
   });
 }
@@ -390,7 +435,7 @@ export function recoverOnStartup(): Promise<void> {
       reopened.push({ id: w.id, tabs });
     }
 
-    await withSessionData((data) => {
+    await withSessionData(async (data) => {
       const freshSession = data.rehydratedAt === undefined;
       // Window matching runs ONLY on the first run of a browser session. On a
       // mid-session SW wake we must never re-match: a window opened while the SW
@@ -415,6 +460,22 @@ export function recoverOnStartup(): Promise<void> {
       // setSessionData (one callback) — setting the marker in a separate/earlier
       // write would reintroduce clobber-on-recycle.
       if (freshSession) data.rehydratedAt = Date.now();
+
+      // Self-healing sweep, on EVERY cold start (fresh or mid-session). The
+      // event handlers assume each tab disappearance arrives as one
+      // successfully-handled event; anything missed (SW killed mid-dispatch,
+      // replaced tabs in older builds, duplicate TabRefs) leaves ghost rows
+      // that can never be closed. Re-query inside this serialized write so
+      // the live set is current — a TabRef present here was written by an
+      // already-dispatched event, so a fresh query can only be ahead of (or
+      // equal to) the state, never behind it.
+      const live = (await chrome.tabs.query({}))
+        .filter((t): t is chrome.tabs.Tab & { id: number } => t.id !== undefined)
+        .map((t) => ({ chromeTabId: t.id, chromeWindowId: t.windowId }));
+      const stats = reconcileSessionData(data, live);
+      if (reconcileChangeCount(stats) > 0) {
+        console.warn('[side-tab] reconcile repaired stale state', stats);
+      }
     });
 
     // Don't let rehydration's own session write echo back into the mirror: we
